@@ -257,7 +257,7 @@ for i in range(rows):
 
         k+=1
 
-# plt.savefig("Redaccion/MSE-"+name+"_"+'{:02.2f}'.format(sig*255
+# plt.savefig("MSE-"+name+"_"+'{:02.2f}'.format(sig*255
 #                                                         )+".png",dpi=300)
 
 
