@@ -3,7 +3,6 @@ import numpy as np
 from matplotlib import pyplot as plt 
 import FABADA as FAB
 import utilities as ut
-from bm3d import bm3d
 import cv2
 from time import time
 import sys
@@ -13,6 +12,12 @@ import pandas as pd
 import os
 from mpl_toolkits.axes_grid1.inset_locator import mark_inset
 
+try:
+    from bm3d import bm3d
+except:
+    sys.exit("Python could not find BM3D in your computer."+
+             " If you want to reproduce all the solutions please"+
+          " consider installing it by running: \npip install bm3d")
 
 #%%
 """
@@ -51,19 +56,17 @@ sig = 40
 main_path = os.getcwd()
 imagename = os.path.join(main_path,'test_images',name+'.png')
 
-
-
-data_real = cv2.imread(imagename,0)/255
-
-
 np.random.seed(1)
-N=data_real.shape
-mu, sig = 0, sig/255
-noise = np.random.normal(mu, sig,N)
+
+data_real = cv2.imread(imagename,0)/255      # Normalize to one because BM3D
+sig = sig/255
+
+
+noise = np.random.normal(0, sig/255 ,data_real.shape)
 data = data_real + noise
 errors = sig*np.ones_like(data)
 variance = errors**2
-kwargs = {"debug" : False,"data_real": data_real,"sigma":sig}
+
 
 smooth_names = ["FABADA SM","FABADA BM",'FABADA SMopt',"FABADA BMopt",
                 'BM3D', "Fourier Transform",'Savitzky–Golay','MEDIAN']
@@ -75,7 +78,7 @@ results = {}
 
 # FABADA
 
-results[smooth_names[0]] = FAB.FABADA_SM(data, variance,**kwargs)
+results[smooth_names[0]] = FAB.FABADA_SM(data, variance)
 results[smooth_names[1]] = FAB.FABADA_BM(data, variance)
 results[smooth_names[2]] = FAB.FABADA_SMopt(data, variance, data_real)
 results[smooth_names[3]] = FAB.FABADA_BMopt(data, variance, data_real)
@@ -190,7 +193,7 @@ elif name=="bubble":
     rect = [0.6,0.78,0.4,0.22]
     loc1,loc2 = 2,3
 elif name=="ghost":
-    subpos = [[425,489],[34,100]]
+    subpos = [[425,489],[100,34]]
     rect = [0.0,0.6,0.4,0.4]
     loc1,loc2 = 3,4
 elif name=="eagle":
@@ -257,7 +260,6 @@ for i in range(rows):
 
         k+=1
 
-# plt.savefig("MSE-"+name+"_"+'{:02.2f}'.format(sig*255
-#                                                         )+".png",dpi=300)
+# plt.savefig("MSE-"+name+"_"+'{:02.2f}'.format(sig*255)+".png",dpi=300)
 
 
