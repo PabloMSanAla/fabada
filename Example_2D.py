@@ -62,7 +62,7 @@ data_real = cv2.imread(imagename,0)/255      # Normalize to one because BM3D
 sig = sig/255
 
 
-noise = np.random.normal(0, sig/255 ,data_real.shape)
+noise = np.random.normal(0, sig ,data_real.shape)
 data = data_real + noise
 errors = sig*np.ones_like(data)
 variance = errors**2
