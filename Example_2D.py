@@ -242,7 +242,7 @@ for i in range(rows):
                             '{:02.2f}'.format(PSNR_all[smooth_names[k]])+")",
                             size = 10,bbox = props)
             try:
-                subax = ut.add_subplot_axes(ax[i][j],rect,axisbg='w')
+                subax = ut.add_subplot_axes(ax[i][j],rect)
                 subax.imshow(results[smooth_names[k]],
                              vmin=vmin,vmax=vmax,cmap='gray')
                 subax.set_xlim(subpos[0])
