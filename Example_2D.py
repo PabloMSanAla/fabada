@@ -210,7 +210,7 @@ smooth_names = ["Real Data","Data + Noise","FABADA SM","FABADA BM",
 labels = ["$DATA_{REAL}$","NOISY" ,
           "$SM(\mathcal{E}_{MAX})$","$BM(\mathcal{E}_{IP})$",
           "$SM(MSE_{min})$","$BM(MSE_{min})$",
-          "MEDIAN",'SGF','LPFF',"Photoshop", "BM3D"]
+          "MEDIAN",'SGF','LPFF', "BM3D"]
 
 cols = math.ceil(len(smooth_names)/2)
 rows = 2
