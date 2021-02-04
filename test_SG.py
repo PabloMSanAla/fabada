@@ -33,9 +33,9 @@ N = len(signal)
 
 # Noise
 
-sigma_noise = 5
+sigma_noise = 15
 data_variance = sigma_noise**2 * np.ones_like(signal)
-# np.random.seed(124311)
+np.random.seed(12431)
 
 
 # FABADA
@@ -48,8 +48,8 @@ sg_max_deg = 5
 # Plots
 
 show_intermediate_plots = False
-zoom_center = 400
-zoom_radius = 140
+zoom_center = 600
+zoom_radius = 90
 
 
 # %%  Main loop

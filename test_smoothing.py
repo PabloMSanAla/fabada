@@ -64,7 +64,7 @@ N = len(signal)
 
 sigma_noise = 15
 data_variance = sigma_noise**2 * np.ones_like(signal)
-# np.random.seed(124311)
+np.random.seed(12431)
 
 
 # FABADA
@@ -76,7 +76,7 @@ fraction_of_Pmax = .5
 # Plots
 
 show_intermediate_plots = False
-zoom_center = 400
+zoom_center = 600
 zoom_radius = 90
 
 
