@@ -4,29 +4,32 @@ from matplotlib import pyplot as plt
 import scipy
 
 
-def PSNR(data,real):
+def PSNR(data,real,n=255):
     MSE = np.sum((data-real)**2)/(data.size)
-    return 10*np.log10((1)**2 / MSE)
-    # return 10*np.log10((255)**2 / MSE)
+    return 10*np.log10((n)**2 / MSE)
 
-def show_data(data_list):
+def show_data(data_list,title_list=[]):
     if type(data_list) == list:
         fig,ax=plt.subplots(figsize = (6*len(data_list),6), nrows=1, 
                             ncols=len(data_list),sharex=True,sharey=True)
         plt.subplots_adjust(top=0.891,bottom=0.065,left=0.039,
                             right=0.978,hspace=0.205,wspace=0.038)
-        vmin,vmax = np.percentile(data_list, [5,95])
+        vmin,vmax = np.percentile(data_list[0], [5,95])
         for i in range(len(data_list)):
-            im = ax[i].imshow(data_list[i],vmin=vmin,vmax=vmax,origin = 'low',
+            im = ax[i].imshow(data_list[i],vmin=vmin,vmax=vmax,origin = 'lower',
                               cmap="gray")
-        pos_bar = [0.1, 0.91, 0.8, 0.03]
+            if title_list:
+                ax[i].set_title(title_list[i],fontsize=15)
+        pos_bar = [0.1, 0.85, 0.7, 0.03]
         cax = fig.add_axes(pos_bar)
         fig.colorbar(im, cax=cax,orientation="horizontal", pad=0.2)
         cax.xaxis.set_ticks_position("top")
+        if title_list:
+            plt.suptitle(title_list[-1],fontsize=20)
     else:
         plt.figure()
         plt.imshow(data_list, vmin=np.percentile(data_list, 5), 
-             vmax=np.percentile(data_list, 95), cmap="gray", origin = 'low')
+             vmax=np.percentile(data_list, 95), cmap="gray", origin = 'lower')
         plt.colorbar()
         plt.tight_layout()
 

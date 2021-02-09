@@ -67,7 +67,7 @@ def Evidence(mu1, mu2, var1, var2):
 
 #### 2D ####
 
-name = "galaxies"
+name = "cluster"
 
 imagename =  os.path.join('test_images',name+'.png')
 signal = cv2.imread(imagename,0) #/255
@@ -90,7 +90,7 @@ fraction_of_Pmax = .5
 
 # Plots
 
-show_intermediate_plots = True
+show_intermediate_plots = False
 zoom_center = 400
 zoom_radius = 100
 
@@ -111,7 +111,9 @@ bayesian_model = bayesian_weight * data
 
 converged = False
 iteration = 0
+
 while not converged:
+    
     iteration += 1
 
     prior_mean = running_mean(posterior_mean)
@@ -121,13 +123,14 @@ while not converged:
     posterior_variance = 1/(1/prior_variance + 1/data_variance)
     posterior_mean = (prior_mean/prior_variance + data/data_variance
                       )*posterior_variance
+    
     evidence = Evidence(prior_mean, data, prior_variance, data_variance)
     
     chi2_data = np.sum((data-posterior_mean)**2/data_variance)
     chi2_pdf = stats.chi2.pdf(chi2_data, df=data.size)
+    # print(chi2_pdf)
 
     model_weight = evidence * chi2_pdf
-    print(chi2_pdf)
     bayesian_weight += model_weight
     bayesian_model += model_weight*posterior_mean
     bayes = bayesian_model/bayesian_weight
@@ -140,12 +143,12 @@ while not converged:
 
     if show_intermediate_plots or converged:
 
-        mse = np.mean((signal-posterior_mean)**2)
-        psnr = 10*np.log10(255**2/mse)
-        mse = np.mean((signal-bayes)**2)
-        psnr_bayes = 10*np.log10(255**2/mse)
         
-        if len(data.shape) ==1:
+        psnr = ut.PSNR(posterior_mean,signal)
+        psnr_bayes = ut.PSNR(bayes,signal)
+        
+        if len(data.shape) == 1:
+            
             fig, (ax) = plt.subplots(1, 1)
             ax.set_title(
                 '{}({:.3f}): {:.2f}/{:.4f};{:.2f}/{:.4f}'.format(
@@ -161,47 +164,40 @@ while not converged:
             ax.set_ylim(-25, 255)
             plt.show()
             
-        if len(data.shape) ==2:
+        if len(data.shape) == 2:
             
             ut.show_data([signal,data,bayes,posterior_mean],
-                         title='{}({:.3f}): {:.2f}/{:.4f};{:.2f}/{:.4f}'.format(
+                    title_list=['Signal','Data','Bayes','Posterior Mean',
+                    '{}({:.3f}): {:.2f}/{:.4f} ; {:.2f}/{:.4f}'.format(
                     iteration, np.mean(evidence/initial_evidence-1),
                     chi2_data/data.size, psnr,
                     chi2_bayes/data.size, psnr_bayes,
-                    ))
-            # fig, (ax) = plt.subplots(figsize = (18,6), nrows=1, 
-            #                 ncols=3,sharex=True,sharey=True)
-            # plt.suptitle(
-            #     '{}({:.3f}): {:.2f}/{:.4f};{:.2f}/{:.4f}'.format(
-            #         iteration, np.mean(evidence/initial_evidence-1),
-            #         chi2_data/data.size, psnr,
-            #         chi2_bayes/data.size, psnr_bayes,
-            #         ))
-            # vmin,vmax = np.nanpercentile(data,(5,95))
-            # ax[0].imshow(data,vmin=vmin,vmax=vmax)
-            # ax[1].imshow(bayes,vmin=vmin,vmax=vmax)
-            # ax[2].imshow(posterior_mean, vmin=vmin,vmax=vmax)
-            # for axes in ax:
-            #     ax.set_xlim(zoom_center-zoom_radius, zoom_center+zoom_radius)
-            #     ax.set_ylim(-25, 255)
-            # plt.show()
-
-
+                    )])
 
 # %% Comparison with previous versions
 
 fab_BM = FAB.FABADA_BM(data, data_variance)
 fab_BM_opt = FAB.FABADA_BMopt(data,data_variance,signal)
+chi2_fabopt = np.sum((fab_BM_opt-data)**2/data_variance)
 
 print('\n{:-^60} \n'.format(" PSNR (dB) sigma = {} ".format(sigma_noise)))
-print('{:25} PSNR --> {:2.3f} dB'.format("FABADA NEW BAYES",
+print('{:20} PSNR --> {:2.3f} dB'.format("FABADA NEW BAYES",
                                ut.PSNR(bayes, signal)))
-print("{:25} PSNR --> {:2.3f} dB".format("Posterior Mean",
+print("{:20} PSNR --> {:2.3f} dB".format("Posterior Mean",
                                ut.PSNR(posterior_mean, signal)))
-print("{:25} PSNR --> {:2.3f} dB".format("FABADA BM",
+print("{:20} PSNR --> {:2.3f} dB".format("FABADA BM",
                                ut.PSNR(fab_BM, signal)))
-print("{:25} PSNR --> {:2.3f} dB".format("FABADA BM OPT",
+print("{:20} PSNR --> {:2.3f} dB".format("FABADA BM OPT",
                                ut.PSNR(fab_BM_opt, signal)))
+print('\n{:-^60} \n'.format(""))
+
+ut.show_data([signal,data,fab_BM_opt,bayes],
+             title_list=['Signal','Data','FABADA OPT','Bayes New',
+                    '{}({:.3f}): {:.2f}/{:.4f} ; {:.2f}/{:.4f}'.format(
+                    iteration, np.mean(evidence/initial_evidence-1),
+                    chi2_fabopt/data.size, ut.PSNR(fab_BM_opt, signal),
+                    chi2_bayes/data.size, psnr_bayes,
+                    )])
 
 
 # %% Bye
