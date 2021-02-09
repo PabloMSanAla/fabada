@@ -14,7 +14,7 @@ def show_data(data_list,title_list=[]):
                             ncols=len(data_list),sharex=True,sharey=True)
         plt.subplots_adjust(top=0.891,bottom=0.065,left=0.039,
                             right=0.978,hspace=0.205,wspace=0.038)
-        vmin,vmax = np.percentile(data_list[0], [5,95])
+        vmin,vmax = np.percentile(data_list[0], [5,98])
         for i in range(len(data_list)):
             im = ax[i].imshow(data_list[i],vmin=vmin,vmax=vmax,origin = 'lower',
                               cmap="gray")
@@ -29,7 +29,7 @@ def show_data(data_list,title_list=[]):
     else:
         plt.figure()
         plt.imshow(data_list, vmin=np.percentile(data_list, 5), 
-             vmax=np.percentile(data_list, 95), cmap="gray", origin = 'lower')
+             vmax=np.percentile(data_list, 98), cmap="gray", origin = 'lower')
         plt.colorbar()
         plt.tight_layout()
 
