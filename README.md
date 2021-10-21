@@ -76,12 +76,12 @@ The only requisite of the input data is an stimation of its variance.
 <!-- GETTING STARTED -->
 ## Getting Started
 
-We try to make as simple as possible the usage of FABADA. For that purpose we have create a pypi package to install FABADA in its latest version. 
+We try to make as simple as possible the usage of FABADA. For that purpose we have create a PyPI and Conda package to install FABADA in its latest version. 
 
 ### Prerequisites
 
 The first requirement is to have a version of Python greater than 3.5.
-Although pypi install the prerequisites itself, FABADA has two dependecies. 
+Although PyPI install the prerequisites itself, FABADA has two dependecies. 
 
 * [Numpy](https://numpy.org/)
 * [Scipy](https://www.scipy.org/)
@@ -145,6 +145,8 @@ As easy as one line of code.
 The results obtained running this example would be:
 
 ![Image Results][image_results]
+
+The left, middle and right panel corresponds to the true signal, the noisy meassurents and the estimation of fabada respectively. There is also show the Peak Signal to Noise Ratio (PSNR) in dB and the Structural Similarity Index Measure (SSIM) at the bottom of the middle and right panel (PSNR/SSIM).
 
 
 * _fabada_demo_spectra.py_
@@ -250,21 +252,21 @@ Citations and acknowledgement are vital for the continued work on this kind of a
 
 Please cite the following record if you used FABADA in any of your publications. 
 
-*Bibtex
+* Bibtex
 
 @ARTICLE{FABADA,
-        author = {{Sanchez-Alarcón}, Pablo and {Ascasibar}, Yago},
-         title = "{Fully Adaptive Bayesian Algorithm for Data Analysis}",
-       journal = {arXiv e-prints},
-      keywords = {},
-          year = "2022",
-         month = "Jan",
-           eid = {},
-         pages = {},
- archivePrefix = {arXiv},
-        eprint = {},
-  primaryClass = {astro-ph.IM},
-        adsurl = {}
+        author = {{Sanchez-Alarcón}, Pablo and {Ascasibar}, Yago},<br />
+         title = "{Fully Adaptive Bayesian Algorithm for Data Analysis}",<br />
+       journal = {arXiv e-prints},<br />
+      keywords = {},<br />
+          year = "2022",<br />
+         month = "Jan",<br />
+           eid = {},<br />
+         pages = {},<br />
+ archivePrefix = {arXiv},<br />
+        eprint = {},<br />
+  primaryClass = {astro-ph.IM},<br />
+        adsurl = {}<br />
 }
 
 
