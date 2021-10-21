@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 setup(
     name="fabada",
     version='0.0.1',
-    description='Fully Adaptive Bayesiant Algorithm for Data Analysis FABADA',
+    description='Fully Adaptive Bayesian Algorithm for Data Analysis FABADA',
     long_description=long_description,
     long_description_content_type="text/markdown",
     include_package_data=True,

@@ -19,7 +19,7 @@ from fabada import fabada,PSNR
 def main():
 	# IMPORTING SPECTRUM
 	y = np.array(pd.read_csv('arp256.csv').flux)[100:1530]
-	y = (y/y.max())*255
+	y = (y/y.max())*255  # Normalize to 255
 
 	# ADDING RANDOM GAUSSIAN NOISE
 	np.random.seed(12431)
@@ -34,10 +34,6 @@ def main():
 	# SHOW RESULTS
 	show_results(y,z,y_recover)
 
-
-
-if __name__ == '__main__':
-	main()
 
 def show_results(y,z,y_recover):
 	# SHOW RESULTS
@@ -73,3 +69,7 @@ def show_results(y,z,y_recover):
                     right=0.99,wspace=0.0,hspace=0.00) 
 	
 	plt.show()
+
+
+if __name__ == '__main__':
+    main()
