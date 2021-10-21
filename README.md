@@ -254,18 +254,18 @@ Please cite the following record if you used FABADA in any of your publications.
 
 ```latex
 @ARTICLE{FABADA,
-        author = {{Sanchez-Alarcon}, Pablo and {Ascasibar}, Yago},<br />
-         title = "{Fully Adaptive Bayesian Algorithm for Data Analysis}",<br />
-       journal = {arXiv e-prints},<br />
-      keywords = {},<br />
-          year = "2022",<br />
-         month = "Jan",<br />
-           eid = {},<br />
-         pages = {},<br />
- archivePrefix = {arXiv},<br />
-        eprint = {},<br />
-  primaryClass = {astro-ph.IM},<br />
-        adsurl = {}<br />
+        author = {{Sanchez-Alarcon}, Pablo and {Ascasibar}, Yago},
+         title = "{Fully Adaptive Bayesian Algorithm for Data Analysis}",
+       journal = {arXiv e-prints},
+      keywords = {},
+          year = "2022",
+         month = "Jan",
+           eid = {},
+         pages = {},
+ archivePrefix = {arXiv},
+        eprint = {},
+  primaryClass = {astro-ph.IM},
+        adsurl = {}
 }
 ```
 
