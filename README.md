@@ -106,8 +106,9 @@ Although pypi install the prerequisites itself, FABADA has two dependecies.
 * Numpy <br />
 In order to install using pip
 
-
-  $ pip install numpy
+    ```sh
+  pip install numpy
+  ```
   
 or using conda instead
 
@@ -159,12 +160,12 @@ Along with the package two examples are given.
 In here we show how to use fabada for an astronomical grey image (two dimensional)
 First of all we have to import our library previously install 
 
-    ```py
+```javascript
     from fabada import fabada
-    ```
+```
 Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/master/examples/bubble.png) borrowed from the [Hubble Space Telescope gallery](https://www.nasa.gov/mission_pages/hubble/multimedia/index.html). In our case we use the [OpenCV](https://pypi.org/project/opencv-python/) library for that. We also add some random Gaussian white noise using [numpy.random](https://numpy.org/doc/1.16/reference/routines.random.html).
 
-    ```python
+```python
     # IMPORTING IMAGE
     y = cv2.imread("bubble.png",0)
 
@@ -174,7 +175,7 @@ Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/mast
     noise    = np.random.normal(0, sig ,y.shape)
     z        = y + noise 
     variance = sig**2
-    ```
+```
 Once the noisy image is generated we can apply fabada to produce an estimation of the uderlying image, which we only have to call fabada and give it the variance of the noisy image
 
     ```python
