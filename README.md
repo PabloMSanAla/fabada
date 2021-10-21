@@ -103,31 +103,31 @@ We try to make as simple as possible the usage of FABADA. For that purpose we ha
 The first requirement is to have a version of Python greater than 3.5.
 Although pypi install the prerequisites itself, FABADA has two dependecies. 
 
-* Numpy <br />
+* Numpy 
 In order to install using pip
 
-    ```sh
+```sh
   pip install numpy
-  ```
+```
   
 or using conda instead
 
-  ```sh
+```sh
   conda install numpy
-  ```
+```
   
-* Scipy <br />
+* Scipy 
 Same way as numpy
 
-  ```sh
+```sh
   pip install scipy
-  ```
+```
   
 or using conda instead
 
-  ```sh
+```sh
   conda install -c anaconda scipy
-  ```
+```
 However both of the packages usually comes installed with python. 
 
 ### Installation
