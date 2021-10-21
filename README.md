@@ -160,7 +160,7 @@ Along with the package two examples are given.
 In here we show how to use fabada for an astronomical grey image (two dimensional)
 First of all we have to import our library previously install 
 
-```javascript
+```python
     from fabada import fabada
 ```
 Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/master/examples/bubble.png) borrowed from the [Hubble Space Telescope gallery](https://www.nasa.gov/mission_pages/hubble/multimedia/index.html). In our case we use the [OpenCV](https://pypi.org/project/opencv-python/) library for that. We also add some random Gaussian white noise using [numpy.random](https://numpy.org/doc/1.16/reference/routines.random.html).
@@ -178,13 +178,13 @@ Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/mast
 ```
 Once the noisy image is generated we can apply fabada to produce an estimation of the uderlying image, which we only have to call fabada and give it the variance of the noisy image
 
-    ```python
+```python
     y_recover = fabada(z,variance)
-    ```
+```
 And its done :wink:. As easy as one line of code. 
 The results obtained running this example would be:
 
-[Image Results][image_results]
+![Image Results][image_results]
 
 
 * _fabada_demo_spectra.py_
@@ -192,12 +192,12 @@ The results obtained running this example would be:
 In here we show how to use fabada for an astronomical spectra (one dimensional), basically is the same as the example above since fabada is the same for one and two dimensional data. 
 First of all we have to import our library previously install 
 
-    ```python
+```python
     from fabada import fabada
-    ```
+```
 Then we read the interacting galaxy pair [Arp 256](http://simbad.u-strasbg.fr/simbad/sim-basic?Ident=arp256&submit=SIMBAD+search) spectra, taken from the [ASTROLIB PYSYNPHOT](https://github.com/spacetelescope/pysynphot) package which is store in [arp256.csv](https://github.com/PabloMSanAla/fabada/blob/master/examples/arp256.csv). Again we  add some random Gaussian white noise 
 
-    ```python
+```python
     # IMPORTING SPECTRUM
     y = np.array(pd.read_csv('arp256.csv').flux)[100:1530]
     y = (y/y.max())*255  # Normalize to 255
@@ -208,19 +208,19 @@ Then we read the interacting galaxy pair [Arp 256](http://simbad.u-strasbg.fr/si
     noise    = np.random.normal(0, sig ,y.shape)
     z        = y + noise 
     variance = sig**2
-    ```
+```
 Once the noisy image is generated we can, again, apply fabada to produce an estimation of the uderlying spectrum, which we only have to call fabada and give it the variance of the noisy image
 
-    ```python
+```python
     y_recover = fabada(z,variance)
-    ```
+```
     
 And its done :wink:. As easy as one line of code. 
 Which is exactly the same as for two dimensional data. 
 
 The results obtained running this example would be:
 
-[Spectra Results][spectra_results]
+![Spectra Results][spectra_results]
 
 
 
