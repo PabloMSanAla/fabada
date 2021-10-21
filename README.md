@@ -17,14 +17,14 @@
 *** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
 *** https://www.markdownguide.org/basic-syntax/#reference-style-links
 -->
-
+<p align="center">
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
 [![MIT License][license-shield]][license-url]
 [![LinkedIn][linkedin-shield]][linkedin-url]
-
+</p>
 
 
 <!-- PROJECT LOGO 
@@ -34,7 +34,7 @@
     <img src="fabada-logo.svg" alt="Logo" width="80" height="80">
   </a> -->
 
-<h3 align="center">Fully Adaptive Bayesian Algorithm for Data Analysis.  FABADA</h3>
+<h3 align="center">Fully Adaptive Bayesian Algorithm for Data Analysis.</h3>
 <h3 align="center">FABADA</h3>
 
   <p align="center">
