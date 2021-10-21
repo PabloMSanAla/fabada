@@ -17,13 +17,13 @@
 *** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
 *** https://www.markdownguide.org/basic-syntax/#reference-style-links
 -->
-<h3 align="center">
+
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
 [![MIT License][license-shield]][license-url]
-[![LinkedIn][linkedin-shield]][linkedin-url]</h3>
+[![LinkedIn][linkedin-shield]][linkedin-url]
 
 
 
@@ -106,9 +106,8 @@ Although pypi install the prerequisites itself, FABADA has two dependecies.
 * Numpy <br />
 In order to install using pip
 
-  ```sh
-  pip install numpy
-  ```
+
+  $ pip install numpy
   
 or using conda instead
 
@@ -160,7 +159,7 @@ Along with the package two examples are given.
 In here we show how to use fabada for an astronomical grey image (two dimensional)
 First of all we have to import our library previously install 
 
-    ```python
+    ```py
     from fabada import fabada
     ```
 Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/master/examples/bubble.png) borrowed from the [Hubble Space Telescope gallery](https://www.nasa.gov/mission_pages/hubble/multimedia/index.html). In our case we use the [OpenCV](https://pypi.org/project/opencv-python/) library for that. We also add some random Gaussian white noise using [numpy.random](https://numpy.org/doc/1.16/reference/routines.random.html).
