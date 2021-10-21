@@ -76,7 +76,7 @@ The only requisite of the input data is an estimation of its variance.
 <!-- GETTING STARTED -->
 ## Getting Started
 
-We try to make as simple as possible the usage of FABADA. For that purpose, we have create a PyPI and Conda package to install FABADA in its latest version. 
+We try to make the usage of FABADA as simple as possible. For that purpose, we have create a PyPI and Conda package to install FABADA in its latest version. 
 
 ### Prerequisites
 
