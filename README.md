@@ -252,6 +252,7 @@ Please cite the following record if you used FABADA in any of your publications.
 
 * Bibtex
 
+```latex
 @ARTICLE{FABADA,
         author = {{Sanchez-Alarcon}, Pablo and {Ascasibar}, Yago},<br />
          title = "{Fully Adaptive Bayesian Algorithm for Data Analysis}",<br />
@@ -266,7 +267,7 @@ Please cite the following record if you used FABADA in any of your publications.
   primaryClass = {astro-ph.IM},<br />
         adsurl = {}<br />
 }
-
+```
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
