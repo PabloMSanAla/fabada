@@ -1,9 +1,10 @@
 <div id="top"></div>
-[![Contributors][contributors-shield]][contributors-url]
+
+[![Contributors][contributors-shield]][contributors-url] 
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![MIT License][license-shield]][license-url]
+[![Issues][issues-shield]][issues-url] 
+[![GNU License][license-shield]][license-url]
 [![LinkedIn][linkedin-shield]][linkedin-url]
 
 
@@ -21,7 +22,7 @@
   <p align="center">
     FABADA is a novel non-parametric noise reduction technique which arise from the point of view of Bayesian inference that iteratively evaluates possible smoothed models of the data, obtaining an estimation of the underlying signal that is statistically compatible with the noisy measurements.
     Iterations stop based on the evidence $E$ and the $\chi^2$ statistic of the last smooth model, and we compute the expected value of the signal as a weighted average of the smooth models.
-    You can find the entire paper describing the new process in (introduce link to ArXiv soon).
+    You can find the entire paper describing the new procces in [ArXiv](https://arxiv.org/).
     <br />
     <a href="https://github.com/PabloMSanAla/fabada"><strong>Explore the docs »</strong></a>
     <br />
@@ -88,7 +89,7 @@ Although PyPI install the prerequisites itself, FABADA has two dependecies.
 
 ### Installation
 
-To install fabada we can, again, use the Python Package Index (PyPI) or Conda management systems.
+To install fabada we can, again, use the Python Package Index (PyPI) or Conda.
 
 Using pip
 
@@ -96,7 +97,7 @@ Using pip
   pip install fabada
 ```
   
-and we are currently working on uploading the package to the Conda system. 
+we are currently working on uploading the package to the Conda system.
 
 
 <p align="right">(<a href="#top">back to top</a>)</p>
@@ -246,7 +247,7 @@ Citations and acknowledgement are vital for the continued work on this kind of a
 
 Please cite the following record if you used FABADA in any of your publications. 
 
-We are currently working on publishing  the paper, soon there will be a reference for it. 
+We are currently working on publishing the paper, soon there will be a reference for it.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -279,5 +280,3 @@ We are currently working on publishing  the paper, soon there will be a referenc
 [linkedin-url]: https://linkedin.com/in/linkedin_username
 [image_results]: src/images/image_results.png
 [spectra_results]: src/images/spectra_results.png
-
-
