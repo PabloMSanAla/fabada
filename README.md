@@ -1,5 +1,4 @@
 <div id="top"></div>
-
 [![Contributors][contributors-shield]][contributors-url] 
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
@@ -89,19 +88,16 @@ Although PyPI install the prerequisites itself, FABADA has two dependecies.
 
 ### Installation
 
-To install fabada we can, again, use the Python Package Index (PyPI) or Conda.
+To install fabada we can, again, use the Python Package Index (PyPI) or Conda management systems.
 
 Using pip
 
-  ```sh
+```sh
   pip install fabada
-  ```
+```
   
-or using conda instead
+and we are currently working on uploading the package to the Conda system. 
 
-  ```sh
-  conda install fabada
-  ```
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
