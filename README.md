@@ -1,6 +1,11 @@
 <div id="top"></div>
 
-<p align="center">[![Contributors][contributors-shield]][contributors-url] [![Forks][forks-shield]][forks-url] [![Stargazers][stars-shield]][stars-url] [![Issues][issues-shield]][issues-url] [![MIT License][license-shield]][license-url] [![LinkedIn][linkedin-shield]][linkedin-url] </p>
+[![Contributors][contributors-shield]][contributors-url] 
+[![Forks][forks-shield]][forks-url]
+[![Stargazers][stars-shield]][stars-url]
+[![Issues][issues-shield]][issues-url] 
+[![GNU License][license-shield]][license-url]
+[![LinkedIn][linkedin-shield]][linkedin-url]
 
 
 
@@ -45,11 +50,11 @@
       </ul>
     </li>
     <li><a href="#usage">Usage</a></li>
-    <li><a href="#usage">Results Paper</a></li>
+    <li><a href="#results">Results</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
-    <li><a href="#usage">Cite</a></li>
+    <li><a href="#cite">Cite</a></li>
     <!-- <li><a href="#acknowledgments">Acknowledgments</a></li> -->
   </ol>
 </details>
@@ -187,7 +192,7 @@ The red, grey and black line represents the true signal, the noisy meassurents a
 
 
 <!-- Results Paper -->
-## Results Paper
+## Results
 
 All the results of the paper of this algorithm can be found in the  [GitHub Pages](https://pablomsanala.github.io/fabada/) of this repositorie. 
 
