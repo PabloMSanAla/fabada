@@ -102,7 +102,7 @@ We try to make as simple as possible the usage of FABADA. For that purpose we ha
 The first requirement is to have a version of Python greater than 3.5.
 Although pypi install the prerequisites itself, FABADA has two dependecies. 
 
-* Numpy
+* Numpy <br />
 In order to install using pip
   ```sh
   pip install numpy
@@ -111,7 +111,7 @@ or using conda instead
   ```sh
   conda install numpy
   ```
-* Scipy
+* Scipy <br />
 Same way as numpy
   ```sh
   pip install scipy
@@ -130,7 +130,7 @@ Using pip
   ```
 or using conda instead
   ```sh
-  conda install -c anaconda scipy
+  conda install fabada
   ```
 
 <p align="right">(<a href="#top">back to top</a>)</p>
@@ -142,10 +142,10 @@ or using conda instead
 
 Along with the package two examples are given. 
 
-* _fabada_demo_image.py_
+* _fabada_demo_image.py_ 
 
 In here we show how to use fabada for an astronomical grey image (two dimensional)
-First of all we have to import our library previously install 
+First of all we have to import our library previously install <br />
     ```python
     from fabada import fabada
     ```
