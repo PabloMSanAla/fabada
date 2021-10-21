@@ -21,7 +21,7 @@
   <p align="center">
     FABADA is a novel non-parametric noise reduction technique which arise from the point of view of Bayesian inference that iteratively evaluates possible smoothed models of the data, obtaining an estimation of the underlying signal that is statistically compatible with the noisy measurements.
     Iterations stop based on the evidence $E$ and the $\chi^2$ statistic of the last smooth model, and we compute the expected value of the signal as a weighted average of the smooth models.
-    You can find the entire paper describing the new procces in (introduce link to arxiv).
+    You can find the entire paper describing the new process in (introduce link to ArXiv soon).
     <br />
     <a href="https://github.com/PabloMSanAla/fabada"><strong>Explore the docs »</strong></a>
     <br />
@@ -65,7 +65,7 @@
 
 <!-- [![Product Name Screen Shot][product-screenshot]](https://example.com) -->
 
-This automatic method is focused in astronomical data, such as images (2D) or spectra (1D). Although, this doesn't mean it can be treat like a general noise reduction algorithm and can be use in any kind of two and one-dimensional data reproducing reliable  results. 
+This automatic method is focused in astronomical data, such as images (2D) or spectra (1D). Although, this doesn't mean it can be treat like a general noise reduction algorithm and can be use in any kind of two and one-dimensional data reproducing reliable results. 
 The only requisite of the input data is an stimation of its variance.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
@@ -75,7 +75,7 @@ The only requisite of the input data is an stimation of its variance.
 <!-- GETTING STARTED -->
 ## Getting Started
 
-We try to make as simple as possible the usage of FABADA. For that purpose we have create a PyPI and Conda package to install FABADA in its latest version. 
+We try to make as simple as possible the usage of FABADA. For that purpose, we have create a PyPI and Conda package to install FABADA in its latest version. 
 
 ### Prerequisites
 
@@ -129,7 +129,7 @@ Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/mast
     z        = y + noise 
     variance = sig**2
 ```
-Once the noisy image is generated we can apply fabada to produce an estimation of the uderlying image, which we only have to call fabada and give it the variance of the noisy image
+Once the noisy image is generated we can apply fabada to produce an estimation of the underlying image, which we only have to call fabada and give it the variance of the noisy image
 
 ```python
     y_recover = fabada(z,variance)
@@ -147,8 +147,8 @@ The left, middle and right panel corresponds to the true signal, the noisy meass
 
 * _fabada_demo_spectra.py_
 
-In here we show how to use fabada for an astronomical spectra (one dimensional), basically is the same as the example above since fabada is the same for one and two dimensional data. 
-First of all we have to import our library previously install 
+In here we show how to use fabada for an astronomical spectrum (one dimensional), basically is the same as the example above since fabada is the same for one and two-dimensional data. 
+First of all, we have to import our library previously install 
 
 ```python
     from fabada import fabada
@@ -167,7 +167,7 @@ Then we read the interacting galaxy pair [Arp 256](http://simbad.u-strasbg.fr/si
     z        = y + noise 
     variance = sig**2
 ```
-Once the noisy image is generated we can, again, apply fabada to produce an estimation of the uderlying spectrum, which we only have to call fabada and give it the variance of the noisy image
+Once the noisy image is generated we can, again, apply fabada to produce an estimation of the underlying spectrum, which we only have to call fabada and give it the variance of the noisy image
 
 ```python
     y_recover = fabada(z,variance)
@@ -231,7 +231,7 @@ Distributed under the GNU General Public License. See [`LICENSE.txt`](https://gi
 
 Pablo M Sánchez Alarcón  - pablom.sanala@gmail.com
 
-Yago Ascasibar Sequerios - yago.ascasibar@uam.es
+Yago Ascasibar Sequeiros - yago.ascasibar@uam.es
 
 Project Link: [https://github.com/PabloMSanAla/fabada](https://github.com/PabloMSanAla/fabada)
 
@@ -246,7 +246,8 @@ Citations and acknowledgement are vital for the continued work on this kind of a
 
 Please cite the following record if you used FABADA in any of your publications. 
 
-* Bibtex
+We are currently working on publishing  the paper, soon there will be a reference for it. 
+<!--* Bibtex
 
 ```
 @ARTICLE{FABADA,
@@ -263,7 +264,7 @@ Please cite the following record if you used FABADA in any of your publications.
   primaryClass = {astro-ph.IM},
         adsurl = {}
 }
-```
+```-->
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -296,4 +297,5 @@ Please cite the following record if you used FABADA in any of your publications.
 [linkedin-url]: https://linkedin.com/in/linkedin_username
 [image_results]: src/images/image_results.png
 [spectra_results]: src/images/spectra_results.png
+
 
