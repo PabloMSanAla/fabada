@@ -247,24 +247,6 @@ Citations and acknowledgement are vital for the continued work on this kind of a
 Please cite the following record if you used FABADA in any of your publications. 
 
 We are currently working on publishing  the paper, soon there will be a reference for it. 
-<!--* Bibtex
-
-```
-@ARTICLE{FABADA,
-        author = {{Sanchez-Alarcon}, Pablo and {Ascasibar}, Yago},
-         title = "{Fully Adaptive Bayesian Algorithm for Data Analysis}",
-       journal = {arXiv e-prints},
-      keywords = {},
-          year = "2022",
-         month = "Jan",
-           eid = {},
-         pages = {},
- archivePrefix = {arXiv},
-        eprint = {},
-  primaryClass = {astro-ph.IM},
-        adsurl = {}
-}
-```-->
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
