@@ -142,20 +142,19 @@ def running_mean(dat):
         mean[0] /= 2
         mean[-1] /= 2
     elif dim==2:
-        # mean[:-1,:] += dat[1:,:]
-        # mean[1:,:] += dat[:-1,:]
-        # mean[:,:-1] += dat[:,1:]
-        # mean[:,1:] += dat[:,:-1]
-        # mean[1:-1,1:-1] /= 5
-        # mean[0,1:-1] /= 4
-        # mean[-1,1:-1] /= 4
-        # mean[1:-1,0] /= 4
-        # mean[1:-1,-1] /= 4
-        # mean[0,0] /= 3
-        # mean[-1,-1] /= 3
-        # mean[0,-1] /= 3
-        # mean[-1,0] /= 3
-        mean = ndimage.uniform_filter(dat, size=3)
+        mean[:-1,:] += dat[1:,:]
+        mean[1:,:] += dat[:-1,:]
+        mean[:,:-1] += dat[:,1:]
+        mean[:,1:] += dat[:,:-1]
+        mean[1:-1,1:-1] /= 5
+        mean[0,1:-1] /= 4
+        mean[-1,1:-1] /= 4
+        mean[1:-1,0] /= 4
+        mean[1:-1,-1] /= 4
+        mean[0,0] /= 3
+        mean[-1,-1] /= 3
+        mean[0,-1] /= 3
+        mean[-1,0] /= 3
     else:
         print("Warning: Size of array not supported")
     return mean 
