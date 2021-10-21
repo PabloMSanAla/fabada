@@ -104,6 +104,7 @@ The first requirement is to have a version of Python greater than 3.5.
 Although pypi install the prerequisites itself, FABADA has two dependecies. 
 
 * Numpy 
+
 In order to install using pip
 
 ```sh
@@ -117,6 +118,7 @@ or using conda instead
 ```
   
 * Scipy 
+
 Same way as numpy
 
 ```sh
