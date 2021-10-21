@@ -67,7 +67,7 @@
 <!-- [![Product Name Screen Shot][product-screenshot]](https://example.com) -->
 
 This automatic method is focused in astronomical data, such as images (2D) or spectra (1D). Although, this doesn't mean it can be treat like a general noise reduction algorithm and can be use in any kind of two and one-dimensional data reproducing reliable results. 
-The only requisite of the input data is an stimation of its variance.
+The only requisite of the input data is an estimation of its variance.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
