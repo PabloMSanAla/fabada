@@ -104,19 +104,26 @@ Although pypi install the prerequisites itself, FABADA has two dependecies.
 
 * Numpy <br />
 In order to install using pip
+
   ```sh
   pip install numpy
   ```
+  
 or using conda instead
+
   ```sh
   conda install numpy
   ```
+  
 * Scipy <br />
 Same way as numpy
+
   ```sh
   pip install scipy
   ```
+  
 or using conda instead
+
   ```sh
   conda install -c anaconda scipy
   ```
@@ -124,11 +131,16 @@ However both of the packages usually comes installed with python.
 
 ### Installation
 
+To install fabada we can use the Python Package Index (PyPI) or Conda.
+
 Using pip
+
   ```sh
   pip install fabada
   ```
+  
 or using conda instead
+
   ```sh
   conda install fabada
   ```
@@ -145,11 +157,13 @@ Along with the package two examples are given.
 * _fabada_demo_image.py_ 
 
 In here we show how to use fabada for an astronomical grey image (two dimensional)
-First of all we have to import our library previously install <br />
+First of all we have to import our library previously install 
+
     ```python
     from fabada import fabada
     ```
 Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/master/examples/bubble.png) borrowed from the [Hubble Space Telescope gallery](https://www.nasa.gov/mission_pages/hubble/multimedia/index.html). In our case we use the [OpenCV](https://pypi.org/project/opencv-python/) library for that. We also add some random Gaussian white noise using [numpy.random](https://numpy.org/doc/1.16/reference/routines.random.html).
+
     ```python
     # IMPORTING IMAGE
     y = cv2.imread("bubble.png",0)
@@ -162,23 +176,26 @@ Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/mast
     variance = sig**2
     ```
 Once the noisy image is generated we can apply fabada to produce an estimation of the uderlying image, which we only have to call fabada and give it the variance of the noisy image
+
     ```python
     y_recover = fabada(z,variance)
     ```
 And its done :wink:. As easy as one line of code. 
 The results obtained running this example would be:
 
-[![Product Name Screen Shot][image_results]]
+[Image Results][image_results]
 
 
 * _fabada_demo_spectra.py_
 
 In here we show how to use fabada for an astronomical spectra (one dimensional), basically is the same as the example above since fabada is the same for one and two dimensional data. 
 First of all we have to import our library previously install 
+
     ```python
     from fabada import fabada
     ```
 Then we read the interacting galaxy pair [Arp 256](http://simbad.u-strasbg.fr/simbad/sim-basic?Ident=arp256&submit=SIMBAD+search) spectra, taken from the [ASTROLIB PYSYNPHOT](https://github.com/spacetelescope/pysynphot) package which is store in [arp256.csv](https://github.com/PabloMSanAla/fabada/blob/master/examples/arp256.csv). Again we  add some random Gaussian white noise 
+
     ```python
     # IMPORTING SPECTRUM
     y = np.array(pd.read_csv('arp256.csv').flux)[100:1530]
@@ -192,15 +209,17 @@ Then we read the interacting galaxy pair [Arp 256](http://simbad.u-strasbg.fr/si
     variance = sig**2
     ```
 Once the noisy image is generated we can, again, apply fabada to produce an estimation of the uderlying spectrum, which we only have to call fabada and give it the variance of the noisy image
+
     ```python
     y_recover = fabada(z,variance)
     ```
+    
 And its done :wink:. As easy as one line of code. 
 Which is exactly the same as for two dimensional data. 
 
 The results obtained running this example would be:
 
-[![Product Name Screen Shot][image_results]]
+[Spectra Results][spectra_results]
 
 
 
@@ -276,15 +295,15 @@ Project Link: [https://github.com/PabloMSanAla/fabada](https://github.com/PabloM
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
 [contributors-shield]: https://img.shields.io/github/contributors/PabloMSanAla/fabada.svg?style=plastic&logo=appveyor
 [contributors-url]: https://github.com/PabloMSanAla/fabada/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/PabloMSanAla/fabada.svg?style=for-the-badge
+[forks-shield]: https://img.shields.io/github/forks/PabloMSanAla/fabada.svg?style=plastic&logo=appveyor
 [forks-url]: https://github.com/PabloMSanAla/fabada/network/members
-[stars-shield]: https://img.shields.io/github/stars/PabloMSanAla/fabada.svg?style=for-the-badge
+[stars-shield]: https://img.shields.io/github/stars/PabloMSanAla/fabada.svg?style=plastic&logo=appveyor
 [stars-url]: https://github.com/PabloMSanAla/fabada/stargazers
-[issues-shield]: https://img.shields.io/github/issues/PabloMSanAla/fabada.svg?style=for-the-badge
+[issues-shield]: https://img.shields.io/github/issues/PabloMSanAla/fabada.svg?style=plastic&logo=appveyor
 [issues-url]: https://github.com/PabloMSanAla/fabada/issues
-[license-shield]: https://img.shields.io/github/license/PabloMSanAla/fabada.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/PabloMSanAla/fabada.svg?style=plastic&logo=appveyor
 [license-url]: https://github.com/PabloMSanAla/fabada/blob/master/LICENSE.txt
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
+[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=plastic&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/linkedin_username
 [image_results]: src/images/image_results.png
 [spectra_results]: src/images/spectra_results.png
