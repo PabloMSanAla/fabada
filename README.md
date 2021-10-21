@@ -1,22 +1,4 @@
 <div id="top"></div>
-<!--
-*** Thanks for checking out the Best-README-Template. If you have a suggestion
-*** that would make this better, please fork the repo and create a pull request
-*** or simply open an issue with the tag "enhancement".
-*** Don't forget to give the project a star!
-*** Thanks again! Now go create something AMAZING! :D
--->
-
-
-
-<!-- PROJECT SHIELDS -->
-<!--
-*** I'm using markdown "reference style" links for readability.
-*** Reference links are enclosed in brackets [ ] instead of parentheses ( ).
-*** See the bottom of this document for the declaration of the reference variables
-*** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
-*** https://www.markdownguide.org/basic-syntax/#reference-style-links
--->
 
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
@@ -53,8 +35,6 @@
   </p>
 </div>
 
-
-
 <!-- TABLE OF CONTENTS -->
 <details>
   <summary>Table of Contents</summary>
@@ -72,9 +52,9 @@
     <li><a href="#usage">Usage</a></li>
     <li><a href="#usage">Results Paper</a></li>
     <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#usage">Cite</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
+    <li><a href="#usage">Cite</a></li>
     <!-- <li><a href="#acknowledgments">Acknowledgments</a></li> -->
   </ol>
 </details>
@@ -103,25 +83,9 @@ We try to make as simple as possible the usage of FABADA. For that purpose we ha
 The first requirement is to have a version of Python greater than 3.5.
 Although pypi install the prerequisites itself, FABADA has two dependecies. 
 
-* Numpy
-* Scipy
+* [Numpy](https://numpy.org/)
+* [Scipy](https://www.scipy.org/)
 
-
-It can be installed using pip
-
-```sh
-  pip install numpy
-  pip install scipy
-```
-  
-or using conda instead
-
-```sh
-  conda install numpy
-  conda install -c anaconda scipy
-```
-  
-However both of the packages usually comes installed with python. 
 
 ### Installation
 
@@ -211,7 +175,8 @@ Once the noisy image is generated we can, again, apply fabada to produce an esti
     y_recover = fabada(z,variance)
 ```
     
-And its done :wink:. As easy as one line of code. 
+And done again :wink:
+
 Which is exactly the same as for two dimensional data. 
 
 The results obtained running this example would be:
@@ -259,7 +224,7 @@ Don't forget to give the project a star! Thanks again!
 <!-- LICENSE -->
 ## License
 
-Distributed under the GNU General Public License. See `LICENSE.txt` for more information.
+Distributed under the GNU General Public License. See [`LICENSE.txt`](https://github.com/PabloMSanAla/fabada/blob/master/LICENSE) for more information.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -275,6 +240,36 @@ Yago Ascasibar Sequerios - yago.ascasibar@uam.es
 Project Link: [https://github.com/PabloMSanAla/fabada](https://github.com/PabloMSanAla/fabada)
 
 <p align="right">(<a href="#top">back to top</a>)</p>
+
+<!-- CITE -->
+## Cite
+
+Thank you for using FABADA.
+
+Citations and acknowledgement are vital for the continued work on this kind of algorithms.
+
+Please cite the following record if you used FABADA in any of your publications. 
+
+*Bibtex
+
+@ARTICLE{FABADA,
+        author = {{Sanchez-Alarcón}, Pablo and {Ascasibar}, Yago},
+         title = "{Fully Adaptive Bayesian Algorithm for Data Analysis}",
+       journal = {arXiv e-prints},
+      keywords = {},
+          year = "2022",
+         month = "Jan",
+           eid = {},
+         pages = {},
+ archivePrefix = {arXiv},
+        eprint = {},
+  primaryClass = {astro-ph.IM},
+        adsurl = {}
+}
+
+
+<p align="right">(<a href="#top">back to top</a>)</p>
+
 
 
 
