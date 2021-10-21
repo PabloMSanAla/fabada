@@ -1,11 +1,6 @@
 <div id="top"></div>
 
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![MIT License][license-shield]][license-url]
-[![LinkedIn][linkedin-shield]][linkedin-url]
+<p align="center">[![Contributors][contributors-shield]][contributors-url] [![Forks][forks-shield]][forks-url] [![Stargazers][stars-shield]][stars-url] [![Issues][issues-shield]][issues-url] [![MIT License][license-shield]][license-url] [![LinkedIn][linkedin-shield]][linkedin-url] </p>
 
 
 
@@ -146,7 +141,7 @@ The results obtained running this example would be:
 
 ![Image Results][image_results]
 
-The left, middle and right panel corresponds to the true signal, the noisy meassurents and the estimation of fabada respectively. There is also show the Peak Signal to Noise Ratio (PSNR) in dB and the Structural Similarity Index Measure (SSIM) at the bottom of the middle and right panel (PSNR/SSIM).
+The left, middle and right panel corresponds to the true signal, the noisy meassurents and the estimation of fabada respectively. There is also shown the Peak Signal to Noise Ratio (PSNR) in dB and the Structural Similarity Index Measure (SSIM) at the bottom of the middle and right panel (PSNR/SSIM).
 
 
 * _fabada_demo_spectra.py_
@@ -185,9 +180,7 @@ The results obtained running this example would be:
 
 ![Spectra Results][spectra_results]
 
-
-
-_For more examples, please refer to the [Documentation](https://example.com)_
+The red, grey and black line represents the true signal, the noisy meassurents and the estimation of fabada respectively. There is also shown the Peak Signal to Noise Ratio (PSNR) in dB and the Structural Similarity Index Measure (SSIM) in the legend of the figure (PSNR/SSIM).
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -235,7 +228,7 @@ Distributed under the GNU General Public License. See [`LICENSE.txt`](https://gi
 <!-- CONTACT -->
 ## Contact
 
-Pablo M Sanchez Alarcón  - pablom.sanala@gmail.com
+Pablo M Sánchez Alarcón  - pablom.sanala@gmail.com
 
 Yago Ascasibar Sequerios - yago.ascasibar@uam.es
 
@@ -255,7 +248,7 @@ Please cite the following record if you used FABADA in any of your publications.
 * Bibtex
 
 @ARTICLE{FABADA,
-        author = {{Sanchez-Alarcón}, Pablo and {Ascasibar}, Yago},<br />
+        author = {{Sanchez-Alarcon}, Pablo and {Ascasibar}, Yago},<br />
          title = "{Fully Adaptive Bayesian Algorithm for Data Analysis}",<br />
        journal = {arXiv e-prints},<br />
       keywords = {},<br />
