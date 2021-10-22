@@ -37,7 +37,8 @@ def main():
 
 
 def show_results(y,z,y_recover,save_fig=True):
-	# SHOW RESULTS
+	# PLOTTING RESULTS WITH MATPLOTLIB
+	plt.ion()
 	fig,ax = plt.subplots(1,1,figsize=(11,3))
 
 	ax.plot(y,"r-",alpha=.3,lw=1,label="Signal")
@@ -69,7 +70,10 @@ def show_results(y,z,y_recover,save_fig=True):
 
 	if save_fig:
 		save_path = os.path.join(os.getcwd(),"..","src","images")
-		plt.savefig(os.path.join(save_path,"arp256_fabada_{:2.2f}dB.png".format(PSNR(z,y,L=255))),dpi=300)
+		plt.savefig(os.path.join(save_path,"arp256_fabada_{:2.2f}dB.jpg".format(PSNR(z,y,L=255))),dpi=300)
+	
+	plt.show()
+
 
 if __name__ == '__main__':
     main()

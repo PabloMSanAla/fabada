@@ -42,6 +42,8 @@ def main():
 
 
 def show_results(y,z,y_recover,save_fig=True):
+    # SHOW RESULTS
+    plt.ion()
     fig,ax = plt.subplots(1,3,figsize=(11,4),sharex=True,
                                             sharey=True)
     vmin,vmax = np.nanpercentile(y,[5,97])
