@@ -280,5 +280,5 @@ Readme file taken from [Best README Template](https://github.com/othneildrew/Bes
 [license-url]: https://github.com/PabloMSanAla/fabada/blob/master/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=plastic&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/linkedin_username
-[image_results]: src/images/bubble_fabada_24.63dB.png
-[spectra_results]: src/images/arp256_fabada_28.22dB.png
+[image_results]: src/images/bubble_fabada_24.63dB.jpg
+[spectra_results]: src/images/arp256_fabada_28.22dB.jpg
