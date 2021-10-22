@@ -8,7 +8,13 @@ P.M. Sanchez-Alarcon, Y. Ascasibar, 2022
 from __future__ import print_function, division
 import numpy as np
 import matplotlib.pyplot as plt
-import cv2
+import os
+
+try:
+    import cv2
+except:
+    print("OpenCV Library is not install. Try installing it with","\n"\
+    +"pip install cv2"+"\n"+"or\n"+"conda install -c conda-forge opencv")
 try:
 	from skimage.metrics import structural_similarity as ssim
 except:
@@ -34,13 +40,14 @@ def main():
 	show_results(y,z,y_recover)
 
 
-def show_results(y,z,y_recover):
+
+def show_results(y,z,y_recover,save_fig=True):
     fig,ax = plt.subplots(1,3,figsize=(11,4),sharex=True,
                                             sharey=True)
     vmin,vmax = np.nanpercentile(y,[5,97])
     
-    titles = ["Original Signal","Noisy Meassurements",
-              "Recover Signal"]
+    titles = ["Original Signal","Noisy Measurements",
+              "Recovered Signal"]
     images = [y,z,y_recover]
 
     for i in range(len(images)):
@@ -48,7 +55,7 @@ def show_results(y,z,y_recover):
         ax[i].set_title(titles[i],fontsize=13)
         ax[i].imshow(images[i],vmin=vmin,vmax=vmax,cmap="gray",origin='lower')
         ax[i].axis('off')
-
+        
         if i>0:
             try:
                 ax[i].text(0.7,0.02,"({:2.2f}/{:1.2})".format(
@@ -66,8 +73,12 @@ def show_results(y,z,y_recover):
 
     plt.subplots_adjust(top=0.97,bottom=0.0,left=0.01,
                     right=0.99,wspace=0.0,hspace=0.00)
-    plt.show()
 
+    if save_fig:
+        save_path = os.path.join(os.getcwd(),"..","src","images")
+        plt.savefig(os.path.join(save_path,"bubble_fabada_{:2.2f}dB.png".format(PSNR(z,y,L=255))),dpi=300)
+    
+    plt.show()
 
 if __name__ == '__main__':
     main()

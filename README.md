@@ -252,6 +252,8 @@ We are currently working on publishing the paper, soon there will be a reference
 <p align="right">(<a href="#top">back to top</a>)</p>
 
 
+Readme file taken from [Best README Template](https://github.com/othneildrew/Best-README-Template).
+
 
 
 <!-- ACKNOWLEDGMENTS 
@@ -278,5 +280,5 @@ We are currently working on publishing the paper, soon there will be a reference
 [license-url]: https://github.com/PabloMSanAla/fabada/blob/master/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=plastic&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/linkedin_username
-[image_results]: src/images/image_results.png
-[spectra_results]: src/images/spectra_results.png
+[image_results]: src/images/bubble_fabada_24.63dB.png
+[spectra_results]: src/images/arp256_fabada_28.22dB.png
