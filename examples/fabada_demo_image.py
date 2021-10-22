@@ -76,7 +76,7 @@ def show_results(y,z,y_recover,save_fig=True):
 
     if save_fig:
         save_path = os.path.join(os.getcwd(),"..","src","images")
-        plt.savefig(os.path.join(save_path,"bubble_fabada_{:2.2f}dB.png".format(PSNR(z,y,L=255))),dpi=300)
+        plt.savefig(os.path.join(save_path,"bubble_fabada_{:2.2f}dB.jpg".format(PSNR(z,y,L=255))),dpi=200)
     
     plt.show()
 
