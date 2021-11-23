@@ -42,7 +42,7 @@ def main():
 
 
 def show_results(y,z,y_recover,save_fig=True):
-    # SHOW RESULTS
+    # PLOTTING RESULTS WITH MATPLOTLIB
     plt.ion()
     fig,ax = plt.subplots(1,3,figsize=(11,4),sharex=True,
                                             sharey=True)
