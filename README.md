@@ -84,7 +84,7 @@ Although PyPI install the prerequisites itself, FABADA has two dependecies.
 
 ### Installation
 
-To install fabada we can, again, use the Python Package Index (PyPI) or Conda.
+To install fabada we can, use the Python Package Index (PyPI) or Conda.
 
 Using pip
 
@@ -105,17 +105,19 @@ Along with the package two examples are given.
 - _fabada_demo_image.py_
 
 In here we show how to use fabada for an astronomical grey image (two dimensional)
-First of all we have to import our library previously install
+First of all we have to import our library previously install and some dependecies
 
 ```python
     from fabada import fabada
+    import numpy as np
+    from PIL import Image
 ```
 
-Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/master/examples/bubble.png) borrowed from the [Hubble Space Telescope gallery](https://www.nasa.gov/mission_pages/hubble/multimedia/index.html). In our case we use the [OpenCV](https://pypi.org/project/opencv-python/) library for that. We also add some random Gaussian white noise using [numpy.random](https://numpy.org/doc/1.16/reference/routines.random.html).
+Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/master/examples/bubble.png) borrowed from the [Hubble Space Telescope gallery](https://www.nasa.gov/mission_pages/hubble/multimedia/index.html). In our case we use the [Pillow](https://pypi.org/project/Pillow/) library for that. We also add some random Gaussian white noise using [numpy.random](https://numpy.org/doc/1.16/reference/routines.random.html).
 
 ```python
     # IMPORTING IMAGE
-    y = cv2.imread("bubble.png",0)
+    y = np.array(Image.open("bubble.png").convert('L'))
 
     # ADDING RANDOM GAUSSIAN NOISE
     np.random.seed(12431)
@@ -144,17 +146,19 @@ The left, middle and right panel corresponds to the true signal, the noisy meass
 - _fabada_demo_spectra.py_
 
 In here we show how to use fabada for an astronomical spectrum (one dimensional), basically is the same as the example above since fabada is the same for one and two-dimensional data.
-First of all, we have to import our library previously install
+First of all, we have to import our library previously install and some dependecies
 
 ```python
     from fabada import fabada
+    import pandas as pd
+    import numpy as np
 ```
 
 Then we read the interacting galaxy pair [Arp 256](http://simbad.u-strasbg.fr/simbad/sim-basic?Ident=arp256&submit=SIMBAD+search) spectra, taken from the [ASTROLIB PYSYNPHOT](https://github.com/spacetelescope/pysynphot) package which is store in [arp256.csv](https://github.com/PabloMSanAla/fabada/blob/master/examples/arp256.csv). Again we add some random Gaussian white noise
 
 ```python
     # IMPORTING SPECTRUM
-    y = np.array(pd.read_csv('arp256.csv').flux)[100:1530]
+    y = np.array(pd.read_csv('arp256.csv').flux)
     y = (y/y.max())*255  # Normalize to 255
 
     # ADDING RANDOM GAUSSIAN NOISE
@@ -187,7 +191,7 @@ The red, grey and black line represents the true signal, the noisy meassurents a
 
 ## Results
 
-All the results of the paper of this algorithm can be found in the folder [results](https://github.com/PabloMSanAla/fabada/tree/master/Results) along with a jupyter notebook that allows to explore all of them through an interactive interface. You can run the jupyter notebook through Google Colab in this link --> [Explore the results](https://colab.research.google.com/github/PabloMSanAla/fabada/blob/master/Results/show_results.ipynb#scrollTo=o1iHY5aE5O2o).
+All the results of the paper of this algorithm can be found in the folder [results](https://github.com/PabloMSanAla/fabada/tree/master/Results) along with a jupyter notebook that allows to explore all of them through an interactive interface. You can run the jupyter notebook through Google Colab in this link --> [`Explore the results`](https://colab.research.google.com/github/PabloMSanAla/fabada/blob/master/Results/show_results.ipynb#scrollTo=o1iHY5aE5O2o).
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
