@@ -1,15 +1,13 @@
 <div id="top"></div>
 
-[![Contributors][contributors-shield]][contributors-url] 
+[![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url] 
+[![Issues][issues-shield]][issues-url]
 [![GNU License][license-shield]][license-url]
 [![LinkedIn][linkedin-shield]][linkedin-url]
 
-
-
-<!-- PROJECT LOGO 
+<!-- PROJECT LOGO
 <br />
 <div align="center">
   <a href="https://github.com/PabloMSanAla/fabada">
@@ -59,33 +57,30 @@
   </ol>
 </details>
 
-
-
 <!-- ABOUT THE PROJECT -->
+
 ## About The Method
 
 <!-- [![Product Name Screen Shot][product-screenshot]](https://example.com) -->
 
-This automatic method is focused in astronomical data, such as images (2D) or spectra (1D). Although, this doesn't mean it can be treat like a general noise reduction algorithm and can be use in any kind of two and one-dimensional data reproducing reliable results. 
+This automatic method is focused in astronomical data, such as images (2D) or spectra (1D). Although, this doesn't mean it can be treat like a general noise reduction algorithm and can be use in any kind of two and one-dimensional data reproducing reliable results.
 The only requisite of the input data is an estimation of its variance.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
-
-
 <!-- GETTING STARTED -->
+
 ## Getting Started
 
-We try to make the usage of FABADA as simple as possible. For that purpose, we have create a PyPI and Conda package to install FABADA in its latest version. 
+We try to make the usage of FABADA as simple as possible. For that purpose, we have create a PyPI and Conda package to install FABADA in its latest version.
 
 ### Prerequisites
 
 The first requirement is to have a version of Python greater than 3.5.
-Although PyPI install the prerequisites itself, FABADA has two dependecies. 
+Although PyPI install the prerequisites itself, FABADA has two dependecies.
 
-* [Numpy](https://numpy.org/)
-* [Scipy](https://www.scipy.org/)
-
+- [Numpy](https://numpy.org/)
+- [Scipy](https://www.scipy.org/)
 
 ### Installation
 
@@ -96,27 +91,26 @@ Using pip
 ```sh
   pip install fabada
 ```
-  
-we are currently working on uploading the package to the Conda system.
 
+we are currently working on uploading the package to the Conda system.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
-
-
 <!-- USAGE EXAMPLES -->
+
 ## Usage
 
-Along with the package two examples are given. 
+Along with the package two examples are given.
 
-* _fabada_demo_image.py_ 
+- _fabada_demo_image.py_
 
 In here we show how to use fabada for an astronomical grey image (two dimensional)
-First of all we have to import our library previously install 
+First of all we have to import our library previously install
 
 ```python
     from fabada import fabada
 ```
+
 Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/master/examples/bubble.png) borrowed from the [Hubble Space Telescope gallery](https://www.nasa.gov/mission_pages/hubble/multimedia/index.html). In our case we use the [OpenCV](https://pypi.org/project/opencv-python/) library for that. We also add some random Gaussian white noise using [numpy.random](https://numpy.org/doc/1.16/reference/routines.random.html).
 
 ```python
@@ -127,17 +121,19 @@ Then we read the [bubble image](https://github.com/PabloMSanAla/fabada/blob/mast
     np.random.seed(12431)
     sig      = 15             # Standard deviation of noise
     noise    = np.random.normal(0, sig ,y.shape)
-    z        = y + noise 
+    z        = y + noise
     variance = sig**2
 ```
+
 Once the noisy image is generated we can apply fabada to produce an estimation of the underlying image, which we only have to call fabada and give it the variance of the noisy image
 
 ```python
     y_recover = fabada(z,variance)
 ```
+
 And its done :wink:
 
-As easy as one line of code. 
+As easy as one line of code.
 
 The results obtained running this example would be:
 
@@ -145,16 +141,16 @@ The results obtained running this example would be:
 
 The left, middle and right panel corresponds to the true signal, the noisy meassurents and the estimation of fabada respectively. There is also shown the Peak Signal to Noise Ratio (PSNR) in dB and the Structural Similarity Index Measure (SSIM) at the bottom of the middle and right panel (PSNR/SSIM).
 
+- _fabada_demo_spectra.py_
 
-* _fabada_demo_spectra.py_
-
-In here we show how to use fabada for an astronomical spectrum (one dimensional), basically is the same as the example above since fabada is the same for one and two-dimensional data. 
-First of all, we have to import our library previously install 
+In here we show how to use fabada for an astronomical spectrum (one dimensional), basically is the same as the example above since fabada is the same for one and two-dimensional data.
+First of all, we have to import our library previously install
 
 ```python
     from fabada import fabada
 ```
-Then we read the interacting galaxy pair [Arp 256](http://simbad.u-strasbg.fr/simbad/sim-basic?Ident=arp256&submit=SIMBAD+search) spectra, taken from the [ASTROLIB PYSYNPHOT](https://github.com/spacetelescope/pysynphot) package which is store in [arp256.csv](https://github.com/PabloMSanAla/fabada/blob/master/examples/arp256.csv). Again we  add some random Gaussian white noise 
+
+Then we read the interacting galaxy pair [Arp 256](http://simbad.u-strasbg.fr/simbad/sim-basic?Ident=arp256&submit=SIMBAD+search) spectra, taken from the [ASTROLIB PYSYNPHOT](https://github.com/spacetelescope/pysynphot) package which is store in [arp256.csv](https://github.com/PabloMSanAla/fabada/blob/master/examples/arp256.csv). Again we add some random Gaussian white noise
 
 ```python
     # IMPORTING SPECTRUM
@@ -165,18 +161,19 @@ Then we read the interacting galaxy pair [Arp 256](http://simbad.u-strasbg.fr/si
     np.random.seed(12431)
     sig      = 10             # Standard deviation of noise
     noise    = np.random.normal(0, sig ,y.shape)
-    z        = y + noise 
+    z        = y + noise
     variance = sig**2
 ```
+
 Once the noisy image is generated we can, again, apply fabada to produce an estimation of the underlying spectrum, which we only have to call fabada and give it the variance of the noisy image
 
 ```python
     y_recover = fabada(z,variance)
 ```
-    
+
 And done again :wink:
 
-Which is exactly the same as for two dimensional data. 
+Which is exactly the same as for two dimensional data.
 
 The results obtained running this example would be:
 
@@ -186,21 +183,16 @@ The red, grey and black line represents the true signal, the noisy meassurents a
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
-
-
 <!-- Results Paper -->
+
 ## Results
 
-All the results of the paper of this algorithm can be found in the  [GitHub Pages](https://pablomsanala.github.io/fabada/) of this repositorie. 
-
-_Note: This page might be under development at this moment_
-
+All the results of the paper of this algorithm can be found in the folder [results](https://github.com/PabloMSanAla/fabada/tree/master/Results) along with a jupyter notebook that allows to explore all of them through an interactive interface. You can run the jupyter notebook through Google Colab in this link --> [Explore the results](https://colab.research.google.com/github/PabloMSanAla/fabada/blob/master/Results/show_results.ipynb#scrollTo=o1iHY5aE5O2o).
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
-
-
 <!-- CONTRIBUTING -->
+
 ## Contributing
 
 Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
@@ -216,21 +208,19 @@ Don't forget to give the project a star! Thanks again!
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
-
-
 <!-- LICENSE -->
+
 ## License
 
 Distributed under the GNU General Public License. See [`LICENSE.txt`](https://github.com/PabloMSanAla/fabada/blob/master/LICENSE) for more information.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
-
-
 <!-- CONTACT -->
+
 ## Contact
 
-Pablo M Sánchez Alarcón  - pablom.sanala@gmail.com
+Pablo M Sánchez Alarcón - pablom.sanala@gmail.com
 
 Yago Ascasibar Sequeiros - yago.ascasibar@uam.es
 
@@ -239,24 +229,22 @@ Project Link: [https://github.com/PabloMSanAla/fabada](https://github.com/PabloM
 <p align="right">(<a href="#top">back to top</a>)</p>
 
 <!-- CITE -->
+
 ## Cite
 
 Thank you for using FABADA.
 
 Citations and acknowledgement are vital for the continued work on this kind of algorithms.
 
-Please cite the following record if you used FABADA in any of your publications. 
+Please cite the following record if you used FABADA in any of your publications.
 
 We are currently working on publishing the paper, soon there will be a reference for it.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
-
 Readme file taken from [Best README Template](https://github.com/othneildrew/Best-README-Template).
 
-
-
-<!-- ACKNOWLEDGMENTS 
+<!-- ACKNOWLEDGMENTS
 ## Acknowledgments
 
 * []()
@@ -265,9 +253,9 @@ Readme file taken from [Best README Template](https://github.com/othneildrew/Bes
 
 <p align="right">(<a href="#top">back to top</a>)</p> -->
 
-
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+
 [contributors-shield]: https://img.shields.io/github/contributors/PabloMSanAla/fabada.svg?style=plastic&logo=appveyor
 [contributors-url]: https://github.com/PabloMSanAla/fabada/graphs/contributors
 [forks-shield]: https://img.shields.io/github/forks/PabloMSanAla/fabada.svg?style=plastic&logo=appveyor
