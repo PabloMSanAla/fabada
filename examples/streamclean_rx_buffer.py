@@ -23,7 +23,7 @@ https://github.com/conda-forge/miniforge/#download
 https://docs.conda.io/en/latest/miniconda.html
 (using miniforge command line window)
 conda install numba, scipy, numpy, pipwin
-pip install pipwin, mnumpy_ringbuffer
+pip install pipwin
 pipwin install pyaudio #assuming you're on windows
 
 python thepythonfilename.py #assuming the python file is in the current directory
@@ -79,8 +79,9 @@ def fabada1x(data: [float]):
     data_variance_peakl = numpy.mean(data_variancel) ** 2
 
     data_variancel = numpy.where(data_variancel>data_variance_peakl, data_variance_peakl, data_variancel)
-    data_variance = numpy.concatenate((data_variancer, data_variancel), axis=None)
-    data_variance = numpy.where(data_variance<1, 1.0, data_variance)
+    data_variancer = numpy.where(data_variancer<1, 1, data_variancer)
+    data_variancel = numpy.where(data_variancel<1, 1, data_variancel)
+
 
     
     posterior_mean = dleft
@@ -240,7 +241,7 @@ class StreamSampler(object):
         self.speakerindex = 1
         self.micstream = self.open_mic_stream()
         self.speakerstream = self.open_speaker_stream()
-        self.rb = RingBuffer(capacity=1, dtype=(numpy.int16,32768))
+        self.rb = RingBuffer(capacity=3, dtype=(numpy.int16,32768))
 
         
     def stop(self):
@@ -301,7 +302,6 @@ class StreamSampler(object):
     # it is critical that this function do as little as possible, as fast as possible. numpy.ndarray is the fastest we can move.
     def non_blocking_stream_read(self, in_data, frame_count, time_info, status):
             self.rb.append(numpy.ndarray(buffer=in_data, dtype=numpy.int16, shape=[32768]))
-            self.rb.popleft()
             return None, pyaudio.paContinue
 
 
