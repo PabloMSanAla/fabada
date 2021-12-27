@@ -48,7 +48,7 @@ def relay (data: [float]):
 
 def fabada1x(data: [float]):
     # fabada expects the data as a floating point array, so, that is what we are going to work with.
-    max_iter: int = 200 # as many as your cpu can handle, lol.
+    max_iter: int = 100 # as many as your cpu can handle, lol.
     # move buffer calculations
     # Get the channels
     data = data.astype(float)
@@ -62,16 +62,20 @@ def fabada1x(data: [float]):
     data_variance_residues = numpy.asanyarray([abs(x - j) for x, j in zip(data_beta, data)], dtype=float)
     # we assume beta is larger than residual.
     # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
-    variance5 = abs(numpy.var(data_variance_residues))
+    variance5 = abs(numpy.var(data_variance_residues)) * 2.718281828459045
 
     data_variance =  numpy.asanyarray([(x * variance5) for x in data_variance_residues], dtype=float)
-    data_variance_peak = numpy.mean(data_variance) ** 2
+    #for some reason sometimes this overflows to NAN, which is a major NONO
+    data_variance = numpy.nan_to_num(variance5, copy=False)
+
+    #data_variance_mean = numpy.mean(data_variance)
+   # data_max = data_variance_mean * 2.718281828459045
     #crush the variance at some high point to avoid over-estimating the peaks
     #incidentally this also helps with one of the noise issues. Doesn't fully eliminat it when switchin frequencies, but helps.
-    data_variance = numpy.where(data_variance>data_variance_peak,data_variance_peak, data_variance)
+    #data_variance = numpy.where(data_variance>data_max,data_variance_mean, data_variance)
 
     #data_variance = numpy.where(data_variance>data_variance_peak, data_variance_peak, data_variance)
-    data_variance = numpy.where(data_variance<1, 1, data_variance)
+    #data_variance = numpy.where(data_variance<2.718281828459045, 2.718281828459045, data_variance)
     posterior_mean = data
     posterior_variance = data_variance
     evidence = numpy.exp(-((0 - numpy.sqrt(data_variance)) ** 2) / (2 * (0 + data_variance))) / numpy.sqrt(
