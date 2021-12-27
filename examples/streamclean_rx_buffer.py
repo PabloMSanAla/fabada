@@ -62,7 +62,8 @@ def fabada1x(data: [float]):
     data_variance_residues = numpy.asanyarray([abs(x - j) for x, j in zip(data_beta, data)], dtype=float)
     # we assume beta is larger than residual.
     # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
-    variance5 = abs(numpy.var(data_variance_residues)) * 2.718281828459045
+    variance5 = abs(numpy.var(data_variance_residues))  * 1.61803398875
+
 
     data_variance =  numpy.asanyarray([(x * variance5) for x in data_variance_residues], dtype=float)
     #for some reason sometimes this overflows to NAN, which is a major NONO
