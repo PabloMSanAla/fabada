@@ -35,61 +35,50 @@ import numpy
 import pyaudio
 import scipy.stats
 from numpy_ringbuffer import RingBuffer
+def relay (data: [float]):
+    data = data.astype(float)
+    data = data / 1
+    dleft, dright = data[0::2], data[1::2]
+    dleft =  fabada1x(dleft)
+    dright =  fabada1x(dright)
+    data = numpy.concatenate((dleft, dright))
+    data2 = numpy.column_stack(numpy.split(data, 2)).ravel().astype(numpy.int16)
+    return data2
 
 
 def fabada1x(data: [float]):
     # fabada expects the data as a floating point array, so, that is what we are going to work with.
     max_iter: int = 100 # as many as your cpu can handle, lol. 
     # move buffer calculations
-    data = data.astype(float)
-    data = data / 1
     # Get the channels
-    dleft, dright = data[0::2], data[1::2]
-    # concat the channel samples as two separate arrays. Remember to reverse this before the end!
-    data = numpy.concatenate((dleft, dright))
-
+    data = data.astype(float)
     # insert the values before and after
-    data_alphal_padded = numpy.concatenate((numpy.full((1,), (dleft[0] / 2) + (dleft[1] / 2)), dleft, numpy.full((1,), (dleft[-1] / 2) + (dleft[-2] / 2))))
-    data_alphar_padded = numpy.concatenate((numpy.full((1,), (dright[0] / 2) + (dright[1] / 2)), dright, numpy.full((1,), (dright[-1] / 2) + (dright[-2] / 2))))
-
+    data_alpha_padded = numpy.concatenate((numpy.full((1,), (data[0] / 2) + (data[1] / 2)), data, numpy.full((1,), (data[-1] / 2) + (data[-2] / 2))))
     # average the data
-    
-    data_betar = numpy.asanyarray([(i + j + k / 3) for i, j, k in
-                               zip(data_alphal_padded, data_alphal_padded[1:], data_alphal_padded[2:])], dtype=float)
-    data_betal = numpy.asanyarray([(i + j + k / 3) for i, j, k in
-                               zip(data_alphar_padded, data_alphar_padded[1:], data_alphar_padded[2:])], dtype=float)
+    data_beta = numpy.asarray([(i + j + k / 3) for i, j, k in
+                               zip(data_alpha_padded, data_alpha_padded[1:], data_alpha_padded[2:])], dtype=float)
 
     # get the smallest positive average, get the smallest out of the two. conveniently this also returns the distance between the average and the not so average
-    data_variance_residuesr = numpy.asanyarray([abs(x - j) for x, j in zip(data_betar, dleft)], dtype=float)
-    data_variance_residuesl = numpy.asanyarray([abs(x - j) for x, j in zip(data_betal, dright)], dtype=float)
-
+    data_variance_residues = numpy.asanyarray([abs(x - j) for x, j in zip(data_beta, data)], dtype=float)
     # we assume beta is larger than residual.
     # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
-    variance5r = numpy.var(data_variance_residuesr)
-    variance5l = numpy.var(data_variance_residuesl)
-    
-    data_variancer =  numpy.asanyarray([x * variance5r for x in data_variance_residuesr], dtype=float)
-    data_variance_peakr = numpy.mean(data_variancer) ** 2
-    
+    variance5 = abs(numpy.var(data_variance_residues))
+
+    data_variance =  numpy.asanyarray([(x * variance5) for x in data_variance_residues], dtype=float)
+    data_variance_peak = numpy.mean(data_variance) ** 2
     #crush the variance at some high point to avoid over-estimating the peaks
+    #incidentally this also fixes one of the noise issues.
+    #crush the bottom also, this seems to reduce the clicking?
+    data_variance = numpy.where(data_variance<0.00001, 0.00001, data_variance)
+    data_variance = numpy.where(data_variance>100000,100000, data_variance)
 
-    data_variancer = numpy.where(data_variancer>data_variance_peakr, data_variance_peakr, data_variancer)
-
-    data_variancel =  numpy.asanyarray([x * variance5l for x in data_variance_residuesl], dtype=float)
-    data_variance_peakl = numpy.mean(data_variancel) ** 2
-
-    data_variancel = numpy.where(data_variancel>data_variance_peakl, data_variance_peakl, data_variancel)
-    data_variancer = numpy.where(data_variancer<1, 1, data_variancer)
-    data_variancel = numpy.where(data_variancel<1, 1, data_variancel)
-
-
-    
-    posterior_mean = dleft
-    posterior_variance = data_variancel
-    evidence = numpy.exp(-((0 - numpy.sqrt(data_variancel)) ** 2) / (2 * (0 + data_variancel))) / numpy.sqrt(
-        2 * numpy.pi * (0 + data_variancel)
+    #data_variance = numpy.where(data_variance>data_variance_peak, data_variance_peak, data_variance)
+    data_variance = numpy.where(data_variance<1, 1, data_variance)
+    posterior_mean = data
+    posterior_variance = data_variance
+    evidence = numpy.exp(-((0 - numpy.sqrt(data_variance)) ** 2) / (2 * (0 + data_variance))) / numpy.sqrt(
+        2 * numpy.pi * (0 + data_variance)
     )
-    
     
     initial_evidence = evidence
     chi2_pdf, chi2_data, iteration = 0, data.size, 0
@@ -118,18 +107,18 @@ def fabada1x(data: [float]):
         prior_variance = posterior_variance
 
         # APPLIY BAYES' THEOREM
-        posterior_variance = 1 / (1 / prior_variance + 1 / data_variancel)
-        posterior_mean = (prior_mean / prior_variance + dleft / data_variancel) * posterior_variance
+        posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
+        posterior_mean = (prior_mean / prior_variance + data / data_variance) * posterior_variance
 
         # EVALUATE EVIDENCE
-        evidence = numpy.exp(-((prior_mean - dleft) ** 2) / (2 * (prior_variance + data_variancel))) / numpy.sqrt(
-            2 * numpy.pi * (prior_variance + data_variancel)
+        evidence = numpy.exp(-((prior_mean - data) ** 2) / (2 * (prior_variance + data_variance))) / numpy.sqrt(
+            2 * numpy.pi * (prior_variance + data_variance)
         )
         evidence_derivative = numpy.mean(evidence) - evidence_previous
 
         # EVALUATE CHI2
-        chi2_data = numpy.sum((dleft - posterior_mean) ** 2 / data_variancel)
-        chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=dleft.size)
+        chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
+        chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=data.size)
         chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
         chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
@@ -142,7 +131,7 @@ def fabada1x(data: [float]):
             chi2_data_min = chi2_data
         # CHECK CONVERGENCE
         if (
-                (chi2_data > dleft.size and chi2_pdf_snd_derivative >= 0)
+                (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
                 and (evidence_derivative < 0)
                 or (iteration > max_iter)
         ):
@@ -151,86 +140,9 @@ def fabada1x(data: [float]):
             # COMBINE ITERATION ZERO
             model_weight = initial_evidence * chi2_data_min
             bayesian_weight += model_weight
-            bayesian_model += model_weight * dleft
+            bayesian_model += model_weight * data
 
-    dleft = bayesian_model / bayesian_weight
-    
-    ###################################################
-    posterior_mean = dright
-    posterior_variance = data_variancer
-    evidence = numpy.exp(-((0 - numpy.sqrt(data_variancer)) ** 2) / (2 * (0 + data_variancer))) / numpy.sqrt(
-        2 * numpy.pi * (0 + data_variancer)
-    )
-    
-    
-    initial_evidence = evidence
-    chi2_pdf, chi2_data, iteration = 0, data.size, 0
-    chi2_pdf_derivative, chi2_data_min = 0, data.size
-    bayesian_weight = 0
-    bayesian_model = 0
-
-    converged = False
-
-    while not converged:
-
-        chi2_pdf_previous = chi2_pdf
-        chi2_pdf_derivative_previous = chi2_pdf_derivative
-        evidence_previous = numpy.mean(evidence)
-
-        iteration += 1  # Check number of iterations done
-
-        # GENERATES PRIORS
-        meanx = posterior_mean.copy()
-        meanx[:-1] += posterior_mean[1:]
-        meanx[1:] += posterior_mean[:-1]
-        meanx[1:-1] /= 3
-        meanx[0] /= 2
-        meanx[-1] /= 2
-        prior_mean = meanx
-        prior_variance = posterior_variance
-
-        # APPLIY BAYES' THEOREM
-        posterior_variance = 1 / (1 / prior_variance + 1 / data_variancer)
-        posterior_mean = (prior_mean / prior_variance + dright / data_variancer) * posterior_variance
-
-        # EVALUATE EVIDENCE
-        evidence = numpy.exp(-((prior_mean - dright) ** 2) / (2 * (prior_variance + data_variancer))) / numpy.sqrt(
-            2 * numpy.pi * (prior_variance + data_variancer)
-        )
-        evidence_derivative = numpy.mean(evidence) - evidence_previous
-
-        # EVALUATE CHI2
-        chi2_data = numpy.sum((dright - posterior_mean) ** 2 / data_variancer)
-        chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=dright.size)
-        chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
-        chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
-
-        # COMBINE MODELS FOR THE ESTIMATION
-        model_weight = evidence * chi2_data
-        bayesian_weight += model_weight
-        bayesian_model += model_weight * posterior_mean
-
-        if iteration == 1:
-            chi2_data_min = chi2_data
-        # CHECK CONVERGENCE
-        if (
-                (chi2_data > dright.size and chi2_pdf_snd_derivative >= 0)
-                and (evidence_derivative < 0)
-                or (iteration > max_iter)
-        ):
-            converged = True
-
-            # COMBINE ITERATION ZERO
-            model_weight = initial_evidence * chi2_data_min
-            bayesian_weight += model_weight
-            bayesian_model += model_weight * dright
-    
-    
-    dright = bayesian_model / bayesian_weight
-
-    data = numpy.concatenate((dleft, dright))
-    data2 = numpy.column_stack(numpy.split(data, 2)).ravel().astype(numpy.int16)
-    return data2
+    return bayesian_model / bayesian_weight
 
 
 class StreamSampler(object):
@@ -306,7 +218,7 @@ class StreamSampler(object):
 
 
     def non_blocking_stream_write(self, in_data, frame_count, time_info, status):
-            return fabada1x(self.rb[-1]), pyaudio.paContinue
+            return relay (self.rb[-1]), pyaudio.paContinue
        
         
 
