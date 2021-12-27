@@ -254,7 +254,6 @@ class StreamSampler(object):
                                      length=16384, error=False), pyaudio.paContinue
 
     def non_blocking_stream_write(self, in_data, frame_count, time_info, status):
-        time.sleep(0.001)
         return fabada1x(numpy.asarray(self.buffer.read_overlap(amount=16384, increment=16384),
                                       dtype=float)), pyaudio.paContinue
 
