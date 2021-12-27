@@ -23,15 +23,14 @@ https://github.com/conda-forge/miniforge/#download
 https://docs.conda.io/en/latest/miniconda.html
 (using miniforge command line window)
 conda install numba, scipy, numpy, pipwin
-pip install pipwin, np_rw_buffer
-pipwin install pyaudio
+pip install pipwin
+pipwin install pyaudio #assuming you're on windows
 
 python thepythonfilename.py #assuming the python file is in the current directory
 
 """
 
 import struct
-
 import numpy
 import pyaudio
 from numba import jit, types
