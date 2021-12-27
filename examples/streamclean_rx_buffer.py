@@ -102,6 +102,7 @@ def fabada1x(data: [float]):
 
     data_variancel =  numpy.asanyarray([x * variance5l for x in data_variance_residuesl], dtype=float)
     data_variance_peakl = numpy.mean(data_variancel) ** 2
+
     data_variancel = numpy.where(data_variancel>data_variance_peakl, data_variance_peakl, data_variancel)
     data_variance = numpy.concatenate((data_variancer, data_variancel), axis=None)
     data_variance = numpy.where(data_variance<1, 1.0, data_variance)
