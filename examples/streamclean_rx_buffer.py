@@ -39,7 +39,7 @@ from numpy_ringbuffer import RingBuffer
 
 def fabada1x(data: [float]):
     # fabada expects the data as a floating point array, so, that is what we are going to work with.
-    max_iter: int = 150 # as many as your cpu can handle, lol. 
+    max_iter: int = 100 # as many as your cpu can handle, lol. 
     # move buffer calculations
     data = data.astype(float)
     data = data / 1
@@ -240,7 +240,7 @@ class StreamSampler(object):
         self.speakerindex = 1
         self.micstream = self.open_mic_stream()
         self.speakerstream = self.open_speaker_stream()
-        self.rb = RingBuffer(capacity=2, dtype=(numpy.int16,32768))
+        self.rb = RingBuffer(capacity=1, dtype=(numpy.int16,32768))
 
         
     def stop(self):
