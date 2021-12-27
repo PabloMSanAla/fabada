@@ -30,11 +30,13 @@ python thepythonfilename.py #assuming the python file is in the current director
 
 """
 
-import pyaudio
-from scipy.stats import chi2
-from numba import jit, types
-import np_rw_buffer
+import struct
+
 import numpy
+import pyaudio
+from numba import jit, types
+from scipy.stats import chi2
+
 
 def highpriority():
     """ Set the priority of the process to below-normal."""
@@ -43,15 +45,15 @@ def highpriority():
     try:
         sys.getwindowsversion()
     except AttributeError:
-        isWindows = False
+        is_windows = False
     else:
-        isWindows = True
+        is_windows = True
 
-    if isWindows:
+    if is_windows:
         # Based on:
         #   "Recipe 496767: Set Process Priority In Windows" on ActiveState
         #   http://code.activestate.com/recipes/496767/
-        import win32api,win32process,win32con
+        import win32api, win32process, win32con
 
         pid = win32api.GetCurrentProcessId()
         handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, True, pid)
@@ -60,7 +62,6 @@ def highpriority():
         import os
 
         os.nice(-10)
-
 
 
 @jit(types.float64[:](types.float64[:]))
@@ -72,66 +73,61 @@ def variance(data: [float]):
     # to be able to perform x+y+z/3 on all original elements, we need the first and last to work.
     # to do that, we have to append a new value to both ends which won't distort the original.
     # algebraicly, this is x/2 + y/2, where X and Y are the last and next to last of the original array.
-    avar = numpy.full((1,),(data_alpha[0] / 2) + (data_alpha[1] / 2))
-    zvar = numpy.full((1,),(data_alpha[-1] / 2) + (data_alpha[-2] / 2))
+    avar = numpy.full((1,), (data_alpha[0] / 2) + (data_alpha[1] / 2))
+    zvar = numpy.full((1,), (data_alpha[-1] / 2) + (data_alpha[-2] / 2))
     # insert the values before and after
-    data_alpha_padded = numpy.concatenate((avar, data_alpha,zvar))
+    data_alpha_padded = numpy.concatenate((avar, data_alpha, zvar))
     # average the data
-    data_beta = numpy.asarray([((i) + (j) + (k) / 3) for i, j, k in
-                 zip(data_alpha_padded, data_alpha_padded[1:], data_alpha_padded[2:])])
+    data_beta = numpy.asarray([(i + j + k / 3) for i, j, k in
+                               zip(data_alpha_padded, data_alpha_padded[1:], data_alpha_padded[2:])])
     # get an array filled with the mean
-    x9 =  numpy.mean(data_beta)
-    data_mean_beta = numpy.full((16384,), x9)
     # get the variance for each element from the mean
-    data_variance_beta = [abs(i-j) for i, j in zip(data_beta, data_mean_beta)]
 
     # subtract the averages from the original
-    data_residues = [i - j for i, j in zip(data_alpha, data_beta)]
-
     # if subtracting the average would change the sign, leave the original
-   # data_residues = numpy.where(numpy.sign(data_alpha) != numpy.sign(data_residues), data_alpha, data_beta)
-    data_residues = numpy.asarray([x if j + 0 - j == 0 and x + 0 - x == 0 else j for j,x in zip(data_alpha,data_beta)])
+    # data_residues = numpy.where(numpy.sign(data_alpha) != numpy.sign(data_residues), data_alpha, data_beta)
+    data_residues = numpy.asarray(
+        [x if j + 0 - j == 0 and x + 0 - x == 0 else j for j, x in zip(data_alpha, data_beta)])
     # get the mean for the residuals left over and/or the original values
     x10 = numpy.mean(data_residues)
-    data_mean_residues = numpy.full((16384,),x10)
+    data_mean_residues = numpy.full((32768,), x10)
     # get the variance for the residue forms
-    data_variance_residues = numpy.asarray([abs(i-j) for i, j in zip(data_residues, data_mean_residues)])
+    data_variance_residues = numpy.asarray([abs(i - j) for i, j in zip(data_residues, data_mean_residues)])
     # we assume beta is larger than residual.
     # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
     # after all, noise is very small in the time domain. Man-made noise isn't, but that's a different problem..
-    minimum = 1498258522.00 # in my experience this is the minimum amount of noise present
+    # minimum = # 1498258522.00 # in my experience this is the minimum amount of noise present
     variance5 = numpy.var(data_variance_residues)
-    data_variance_minimum = numpy.full((16384,), minimum)
-    data = [x * variance5 for x in data_variance_residues]
-    #keep the value from going below the noise barrier. We generally see more noise than this.
-    data  = numpy.asarray([max(i,j) for i, j in zip(data, data_variance_minimum)])
+    # data_variance_minimum = numpy.full((16384,), minimum)
+    data = numpy.asarray([x * variance5 for x in data_variance_residues])
+    # keep the value from going below the noise barrier. We generally see more noise than this.
+    # data  = numpy.asarray([max(i,j) for i, j in zip(data, data_variance_minimum)])
 
     return data
 
-#@jit(types.float64[:](types.float64[:]))
+
+# @jit(types.float64[:](types.float64[:]))
 def fabada1x(data: [float]):
     # fabada expects the data as a floating point array, so, that is what we are going to work with.
-    # however, attempting to feed it floating point input seems to slow it way down.
-    max_iter: int = 128
-    #move buffer calculations
-    data = data.flatten() #numpy.flatten(data)#ravel(data)
+    max_iter: int = 96
+    # move buffer calculations
+    data = data / 1.0  # =# data.flatten() #numpy.flatten(data)#ravel(data)
     # Get the channels
 
     dleft, dright = data[0::2], data[1::2]
     # concat the channel samples as two separate arrays. Remember to reverse this before the end!
     data = numpy.concatenate((dleft, dright))
 
-
     # convert to floating point values edit: for numba, move this out of code
-    #data = numpy.array(data,dtype=float)
+    # data = numpy.array(data,dtype=float)
     # copy data
 
     data_variance = variance(data)
     posterior_mean = data
     posterior_variance = data_variance
-    evidence =  numpy.exp(-((0 - numpy.sqrt(data_variance)) ** 2) / (2 * (0 + data_variance))) / numpy.sqrt(
-               2 * numpy.pi * (0 + data_variance)
-         )
+    evidence = numpy.exp(-((0 - numpy.sqrt(data_variance)) ** 2) / (2 * (0 + data_variance))) / numpy.sqrt(
+        2 * numpy.pi * (0 + data_variance)
+    )
     initial_evidence = evidence
     chi2_pdf, chi2_data, iteration = 0, data.size, 0
     chi2_pdf_derivative, chi2_data_min = 0, data.size
@@ -142,70 +138,68 @@ def fabada1x(data: [float]):
 
     while not converged:
 
-            chi2_pdf_previous = chi2_pdf
-            chi2_pdf_derivative_previous = chi2_pdf_derivative
-            evidence_previous = numpy.mean(evidence)
+        chi2_pdf_previous = chi2_pdf
+        chi2_pdf_derivative_previous = chi2_pdf_derivative
+        evidence_previous = numpy.mean(evidence)
 
-            iteration += 1  # Check number of iterations done
+        iteration += 1  # Check number of iterations done
 
-            # GENERATES PRIORS
-            meanx = posterior_mean.copy()
-            meanx[:-1] += posterior_mean[1:]
-            meanx[1:] += posterior_mean[:-1]
-            meanx[1:-1] /= 3
-            meanx[0] /= 2
-            meanx[-1] /= 2
-            prior_mean  = meanx
-            prior_variance = posterior_variance
+        # GENERATES PRIORS
+        meanx = posterior_mean.copy()
+        meanx[:-1] += posterior_mean[1:]
+        meanx[1:] += posterior_mean[:-1]
+        meanx[1:-1] /= 3
+        meanx[0] /= 2
+        meanx[-1] /= 2
+        prior_mean = meanx
+        prior_variance = posterior_variance
 
-            # APPLIY BAYES' THEOREM
-            posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
-            posterior_mean = (prior_mean / prior_variance + data / data_variance) * posterior_variance
+        # APPLIY BAYES' THEOREM
+        posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
+        posterior_mean = (prior_mean / prior_variance + data / data_variance) * posterior_variance
 
+        # EVALUATE EVIDENCE
+        evidence = numpy.exp(-((prior_mean - data) ** 2) / (2 * (prior_variance + data_variance))) / numpy.sqrt(
+            2 * numpy.pi * (prior_variance + data_variance)
+        )
+        evidence_derivative = numpy.mean(evidence) - evidence_previous
 
-            # EVALUATE EVIDENCE
-            evidence = numpy.exp(-((prior_mean - data) ** 2) / (2 * (prior_variance + data_variance))) / numpy.sqrt(
-                2 * numpy.pi * (prior_variance + data_variance)
-            )
+        # EVALUATE CHI2
+        chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
+        chi2_pdf = chi2.pdf(chi2_data, df=data.size)
+        chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
+        chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
-            evidence_derivative = numpy.mean(evidence) - evidence_previous
+        # COMBINE MODELS FOR THE ESTIMATION
+        model_weight = evidence * chi2_data
+        bayesian_weight += model_weight
+        bayesian_model += model_weight * posterior_mean
 
-            # EVALUATE CHI2
-            chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
-            chi2_pdf = chi2.pdf(chi2_data, df=data.size)
-            chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
-            chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
+        if iteration == 1:
+            chi2_data_min = chi2_data
+        # CHECK CONVERGENCE
+        if (
+                (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
+                and (evidence_derivative < 0)
+                or (iteration > max_iter)
+        ):
+            converged = True
 
-            # COMBINE MODELS FOR THE ESTIMATION
-            model_weight = evidence * chi2_data
+            # COMBINE ITERATION ZERO
+            model_weight = initial_evidence * chi2_data_min
             bayesian_weight += model_weight
-            bayesian_model += model_weight * posterior_mean
+            bayesian_model += model_weight * data
 
-            if iteration == 1:
-                chi2_data_min = chi2_data
-            # CHECK CONVERGENCE
-            if (
-                    (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
-                    and (evidence_derivative < 0)
-                    or (iteration > max_iter)
-            ):
-                converged = True
-
-                # COMBINE ITERATION ZERO
-                model_weight = initial_evidence * chi2_data_min
-                bayesian_weight += model_weight
-                bayesian_model += model_weight * data
-
-    bayes = bayesian_model / bayesian_weight
+    bayes = numpy.array(bayesian_model / bayesian_weight)
     # recombine the channels into one interleaved set of samples
     data2 = numpy.column_stack(numpy.split(bayes, 2)).ravel().astype(numpy.int16)
     return data2
 
 
-#@jit(nopython=True)
-#def PSNR(recover, signal, L=255):
- #   MSE = numpy.sum((recover - signal) ** 2) / (recover.size)
- #   return 10 * numpy.log10((L) ** 2 / MSE)
+# @jit(nopython=True)
+# def PSNR(recover, signal, L=255):
+#   MSE = numpy.sum((recover - signal) ** 2) / (recover.size)
+#   return 10 * numpy.log10((L) ** 2 / MSE)
 
 
 class StreamSampler(object):
@@ -214,16 +208,14 @@ class StreamSampler(object):
         self.pa = pyaudio.PyAudio()
         self.micindex = 1
         self.speakerindex = 1
-        self.buffer = np_rw_buffer.RingBuffer(16384, 0, numpy.int16)
         self.micstream = self.open_mic_stream()
         self.speakerstream = self.open_speaker_stream()
-        self.errorcount = 0
-        self.previousvariance = 0.0
+        self.xbuffer = numpy.ndarray([1, 32768], dtype=numpy.int16)  # turns out buffers are redunant
+        self.unpack_ushort = struct.Struct('32768h').unpack
 
     def stop(self):
         self.micstream.close()
         self.speakerstream.close()
-        self.pool.shutdown(block=False)
 
     def open_mic_stream(self):
         device_index = None
@@ -237,7 +229,7 @@ class StreamSampler(object):
                         device_index = i
                         self.micindex = device_index
 
-        if device_index == None:
+        if device_index is None:
             print("No preferred input found; using default input device.")
 
         stream = self.pa.open(format=pyaudio.paInt16,
@@ -245,7 +237,7 @@ class StreamSampler(object):
                               rate=48000,
                               input=True,
                               input_device_index=self.micindex,  # device_index,
-                              frames_per_buffer=8192,
+                              frames_per_buffer=16384,
                               stream_callback=self.non_blocking_stream_read,
                               )
 
@@ -263,29 +255,36 @@ class StreamSampler(object):
                         device_index = i
                         self.speakerindex = device_index
 
-        if device_index == None:
-            print("No preferred output found; using default input device.")
+        if device_index is None:
+            print("No preferred output found; using default output device.")
 
         stream = self.pa.open(format=pyaudio.paInt16,
                               channels=2,
                               rate=48000,
                               output=True,
                               output_device_index=self.speakerindex,
-                              frames_per_buffer=8192,
+                              frames_per_buffer=16384,
                               stream_callback=self.non_blocking_stream_write,
                               )
         return stream
+
+    # it is critical that this function do as little as possible
     def non_blocking_stream_read(self, in_data, frame_count, time_info, status):
-        return self.buffer.write_value(numpy.frombuffer(in_data, count=16384, dtype=numpy.int16).reshape(-1, 1) ,
-                                     length=16384, error=False), pyaudio.paContinue
+        # return self.buffer.write_value(list(self.unpack_ushort(memoryview(in_data))),length=32768 ,move_start=False, error=False),pyaudio.paContinue
+        self.xbuffer[0, :] = list(self.unpack_ushort(in_data))
+        return None, pyaudio.paContinue
+        # return self.buffer.write_value(numpy.frombuffer(in_data, count=32768, dtype=numpy.int16) ,
+        #                            length=32768,move_start=False, error=False), pyaudio.paContinue
 
     def non_blocking_stream_write(self, in_data, frame_count, time_info, status):
-        return fabada1x(numpy.asarray(self.buffer.read_overlap(amount=16384, increment=16384),
-                                      dtype=float)), pyaudio.paContinue
+        # return fabada1x(self.buffer._data[0,:]), pyaudio.paContinue
+        # print(self.xbuffer[0,:])
+        return fabada1x(self.xbuffer[0, :]), pyaudio.paContinue
 
     def stream_start(self):
         highpriority()
         self.micstream.start_stream()
+
         self.speakerstream.start_stream()
         while self.micstream.is_active():
             input("main thread is now paused")
