@@ -192,7 +192,7 @@ class StreamSampler(object):
         self.micstream = self.open_mic_stream()
         self.speakerstream = self.open_speaker_stream()
         self.xbuffer = numpy.ndarray([1, 32768], dtype=numpy.int16)  # turns out buffers are redunant
-        self.unpack_ushort = struct.Struct('32768h').unpack
+
 
     def stop(self):
         self.micstream.close()
@@ -249,9 +249,9 @@ class StreamSampler(object):
                               )
         return stream
 
-    # it is critical that this function do as little as possible
+    # it is critical that this function do as little as possible, as fast as possible. numpy.ndarray is the fastest we can move.
     def non_blocking_stream_read(self, in_data, frame_count, time_info, status):
-        self.xbuffer[0, :] = list(self.unpack_ushort(in_data))
+        self.xbuffer[0, :] = numpy.ndarray(buffer=in_data, dtype=numpy.int16, shape=[1, 32768])  
         return None, pyaudio.paContinue
 
 
