@@ -34,13 +34,15 @@ import struct
 import numpy
 import pyaudio
 import scipy.stats
-from numpy_ringbuffer import RingBuffer
-def relay (data: [float]):
+from np_rw_buffer import RingBuffer, AudioFramingBuffer
+
+
+def relay(data: [float]):
     data = data.astype(float)
     data = data / 1
     dleft, dright = data[0::2], data[1::2]
-    dleft =  fabada1x(dleft)
-    dright =  fabada1x(dright)
+    dleft = fabada1x(dleft)
+    dright = fabada1x(dright)
     data = numpy.concatenate((dleft, dright))
     data2 = numpy.column_stack(numpy.split(data, 2)).ravel().astype(numpy.int16)
     return data2
@@ -48,7 +50,7 @@ def relay (data: [float]):
 
 def fabada1x(data: [float]):
     # fabada expects the data as a floating point array, so, that is what we are going to work with.
-    max_iter: int = 100 # as many as your cpu can handle, lol.
+    max_iter: int = 100  # as many as your cpu can handle, lol.
     # move buffer calculations
     # Get the channels
     data = data.astype(float)
@@ -150,18 +152,163 @@ def fabada1x(data: [float]):
 
 class StreamSampler(object):
 
-    def __init__(self):
-        self.pa = pyaudio.PyAudio()
-        self.micindex = 1
-        self.speakerindex = 1
-        self.micstream = self.open_mic_stream()
-        self.speakerstream = self.open_speaker_stream()
-        self.rb = RingBuffer(capacity=3, dtype=(numpy.int16,32768))
+    dtype_to_paformat = {
+        # Numpy dtype : pyaudio enum
+        'uint8': pyaudio.paUInt8,
+        'int8': pyaudio.paInt8,
+        'uint16': pyaudio.paInt16,
+        'int16': pyaudio.paInt16,
+        'uint24': pyaudio.paInt24,
+        'int24': pyaudio.paInt24,
+        "uint32": pyaudio.paInt32,
+        'int32': pyaudio.paInt32,
+        'float32': pyaudio.paFloat32,
 
-        
+        # Float64 is not a valid pyaudio type.
+        # The encode method changes this to a float32 before sending to audio
+        'float64': pyaudio.paFloat32,
+        "complex128": pyaudio.paFloat32,
+        }
+
+    @classmethod
+    def get_pa_format(cls, dtype):
+        try:
+            dtype = dtype.dtype
+        except (AttributeError, Exception):
+            pass
+        return cls.dtype_to_paformat[dtype.name]
+
+    def __init__(self, processing_size=16384, sample_rate=48000, channels=2, buffer_delay=1.5,
+                 micindex=1, speakerindex=1, dtype=numpy.int16):
+        self.pa = pyaudio.PyAudio()
+        self._processing_size = processing_size
+
+        # np_rw_buffer (AudioFramingBuffer offers a delay time)
+        self._sample_rate = sample_rate
+        self._channels = channels
+        # self.rb = RingBuffer((int(sample_rate) * 5, channels), dtype=numpy.dtype(dtype))
+        self.rb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
+                                     seconds=5,  # Buffer size (need larger than processing size)[seconds * sample_rate]
+                                     buffer_delay=buffer_delay,  # Save data for 1 second then start playing
+                                     dtype=numpy.dtype(dtype))
+
+        self.micindex = micindex
+        self.speakerindex = speakerindex
+        self.micstream = None
+        self.speakerstream = None
+
+        # Set inputs for inheritance
+        self.set_sample_rate(sample_rate)
+        self.set_channels(channels)
+        self.set_dtype(dtype)
+
+    @property
+    def processing_size(self):
+        return self._processing_size
+
+    @processing_size.setter
+    def processing_size(self, value):
+        self._processing_size = value
+        self._update_streams()
+
+    def get_sample_rate(self):
+        return self._sample_rate
+
+    def set_sample_rate(self, value):
+        self._sample_rate = value
+        try:  # RingBuffer
+            self.rb.maxsize = int(value * 5)
+        except AttributeError:
+            pass
+        try:  # AudioFramingBuffer
+            self.rb.sample_rate = value
+        except AttributeError:
+            pass
+        self._update_streams()
+
+    sample_rate = property(get_sample_rate, set_sample_rate)
+
+    def get_channels(self):
+        return self._channels
+
+    def set_channels(self, value):
+        self._channels = value
+        try:  # RingBuffer
+            self.rb.columns = value
+        except AttributeError:
+            pass
+        try:  # AudioFrammingBuffer
+            self.rb.channels = value
+        except AttributeError:
+            pass
+        self._update_streams()
+
+    channels = property(get_channels, set_channels)
+
+    def get_dtype(self):
+        return self.rb.dtype
+
+    def set_dtype(self, value):
+        try:
+            self.rb.dtype = value
+        except AttributeError:
+            pass
+        self._update_streams()
+
+    dtype = property(get_dtype, set_dtype)
+
+    @property
+    def pa_format(self):
+        return self.get_pa_format(self.dtype)
+
+    @pa_format.setter
+    def pa_format(self, value):
+        for np_dtype, pa_fmt in self.dtype_to_paformat.items():
+            if value == pa_fmt:
+                self.dtype = numpy.dtype(np_dtype)
+                return
+
+        raise ValueError('Invalid pyaudio format given!')
+
+    @property
+    def buffer_delay(self):
+        try:
+            return self.rb.buffer_delay
+        except (AttributeError, Exception):
+            return 0
+
+    @buffer_delay.setter
+    def buffer_delay(self, value):
+        try:
+            self.rb.buffer_delay = value
+        except AttributeError:
+            pass
+
+    def _update_streams(self):
+        """Call if sample rate, channels, dtype, or something about the stream changes."""
+        was_running = self.is_running()
+
+        self.stop()
+        self.micstream = None
+        self.speakerstream = None
+        if was_running:
+            self.listen()
+
+    def is_running(self):
+        try:
+            return self.micstream.is_active() or self.speakerstream.is_active()
+        except (AttributeError, Exception):
+            return False
+
     def stop(self):
-        self.micstream.close()
-        self.speakerstream.close()
+        try:
+            self.micstream.close()
+        except (AttributeError, Exception):
+            pass
+        try:
+            self.speakerstream.close()
+        except (AttributeError, Exception):
+            pass
 
     def open_mic_stream(self):
         device_index = None
@@ -178,13 +325,14 @@ class StreamSampler(object):
         if device_index is None:
             print("No preferred input found; using default input device.")
 
-        stream = self.pa.open(format=pyaudio.paInt16,
-                              channels=2,
-                              rate=48000,
+        stream = self.pa.open(format=self.pa_format,
+                              channels=self.channels,
+                              rate=int(self.sample_rate),
                               input=True,
-                              input_device_index=self.micindex,  # device_index,
-                              frames_per_buffer=16384,
+                              # input_device_index=self.micindex,  # device_index,
+                              # frames_per_buffer=16384,  # Do you really need to set this? Default is 1024 I think
                               stream_callback=self.non_blocking_stream_read,
+                              start=False  # Need start to be False if you don't want this to start right away
                               )
 
         return stream
@@ -204,38 +352,72 @@ class StreamSampler(object):
         if device_index is None:
             print("No preferred output found; using default output device.")
 
-        stream = self.pa.open(format=pyaudio.paInt16,
-                              channels=2,
-                              rate=48000,
+        stream = self.pa.open(format=self.pa_format,
+                              channels=self.channels,
+                              rate=int(self.sample_rate),
                               output=True,
-                              output_device_index=self.speakerindex,
-                              frames_per_buffer=16384,
+                              # output_device_index=self.speakerindex,
+                              frames_per_buffer=self.processing_size,  # Might need this for the output since you are looking for a specific size.
                               stream_callback=self.non_blocking_stream_write,
+                              start=False  # Need start to be False if you don't want this to start right away
                               )
         return stream
 
     # it is critical that this function do as little as possible, as fast as possible. numpy.ndarray is the fastest we can move.
     def non_blocking_stream_read(self, in_data, frame_count, time_info, status):
-            self.rb.append(numpy.ndarray(buffer=in_data, dtype=numpy.int16, shape=[32768]))
-            return None, pyaudio.paContinue
+        audio_in = numpy.frombuffer(in_data, dtype=self.dtype).reshape((-1, self.channels))  # frame count will be num rows
+        self.rb.write(audio_in, error=False)
 
+        # self.rb.append(numpy.ndarray(buffer=in_data, dtype=numpy.int16, shape=[32768]))
+        return None, pyaudio.paContinue
 
     def non_blocking_stream_write(self, in_data, frame_count, time_info, status):
-            return relay (self.rb[-1]), pyaudio.paContinue
-       
-        
+        # filtered = self.rb.read(frame_count)
+        # if len(filtered) < frame_count:
+        #     filtered = numpy.zeros((frame_count, self.channels), dtype=self.dtype)
+
+        filtered = self.process_audio()
+        byts_out = filtered.astype(self.dtype).tobytes()
+        return byts_out, pyaudio.paContinue
+
+        # return relay(self.rb[-1]), pyaudio.paContinue
 
     def stream_start(self):
+        if self.micstream is None:
+            self.micstream = self.open_mic_stream()
         self.micstream.start_stream()
-        self.speakerstream.start_stream()
-        while self.micstream.is_active():
-            eval(input("main thread is now paused"))
-        pass
 
-    def listen(self):
-        self.stream_start()
+        if self.speakerstream is None:
+            self.speakerstream = self.open_speaker_stream()
+        self.speakerstream.start_stream()
+
+        # Don't do this here. Do it in main. Other things may want to run while this stream is running
+        # while self.micstream.is_active():
+        #     eval(input("main thread is now paused"))
+
+    listen = stream_start  # Just set a new variable to the same method
+
+    def process_audio(self):
+        if len(self.rb) < self.processing_size:
+            print('Not enough data in the buffer! Increase the buffer_delay')
+            return numpy.zeros((self.processing_size, self.channels), dtype=self.dtype)
+
+        audio = self.rb.read(self.processing_size)
+        chans = []
+        for i in range(self.channels):
+            filtered = fabada1x(audio[:, i])
+            chans.append(filtered)
+
+        # Could buffer again then the output would just take from the buffer
+        return numpy.column_stack(chans)
 
 
 if __name__ == "__main__":
-    SS = StreamSampler()
+    SS = StreamSampler(buffer_delay=0)
     SS.listen()
+
+    while SS.is_running():
+        inp = input('Press enter to quit!\n')   # Halt until user input
+        break
+
+    SS.stop()
