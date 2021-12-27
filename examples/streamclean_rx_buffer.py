@@ -66,7 +66,7 @@ def fabada1x(data: [float]):
     max_iter: int = 128
     # move buffer calculations
     data = data.astype(numpy.float)
-	
+    
     # Get the channels
 
     dleft, dright = memoryview(data[0::2]), memoryview(data[1::2])
@@ -83,24 +83,30 @@ def fabada1x(data: [float]):
                                zip(data_alphal_padded, data_alphal_padded[1:], data_alphal_padded[2:])], dtype=float)
     data_betal = numpy.asanyarray([(i + j + k / 3) for i, j, k in
                                zip(data_alphar_padded, data_alphar_padded[1:], data_alphar_padded[2:])], dtype=float)
-    # get an array filled with the mean
 
-    # get the mean for the residuals left over and/or the original values
-
-    # get the variance for the residue forms
-    data_variance_residuesr = numpy.asanyarray([abs(i - j) for i, j in zip(data_betar, numpy.full((32768,), numpy.mean(data_betar)))], dtype=float)
-    data_variance_residuesl = numpy.asanyarray([abs(i - j) for i, j in zip(data_betal, numpy.full((32768,), numpy.mean(data_betal)))], dtype=float)
+    # get the smallest positive average, get the smallest out of the two. conveniently this also returns the distance between the average and the not so average
+    data_variance_residuesr = numpy.asanyarray([abs(x - j) for x, j in zip(data_betar, dleft)], dtype=float)
+    data_variance_residuesl = numpy.asanyarray([abs(x - j) for x, j in zip(data_betal, dright)], dtype=float)
 
     # we assume beta is larger than residual.
     # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
     variance5r = numpy.var(data_variance_residuesr)
     variance5l = numpy.var(data_variance_residuesl)
-	
+    
     data_variancer =  numpy.asanyarray([x * variance5r for x in data_variance_residuesr], dtype=float)
-    data_variancel =  numpy.asanyarray([x * variance5l for x in data_variance_residuesl], dtype=float)
-	
-    data_variance = numpy.concatenate((data_variancer, data_variancel), axis=None)
+    data_variance_peakr = numpy.mean(data_variancer) ** 2
+    
+    #crush the variance at some high point to avoid over-estimating the peaks
 
+    data_variancer = numpy.where(data_variancer>data_variance_peakr, data_variance_peakr, data_variancer)
+
+    data_variancel =  numpy.asanyarray([x * variance5l for x in data_variance_residuesl], dtype=float)
+    data_variance_peakl = numpy.mean(data_variancel) ** 2
+    data_variancel = numpy.where(data_variancel>data_variance_peakl, data_variance_peakl, data_variancel)
+    data_variance = numpy.concatenate((data_variancer, data_variancel), axis=None)
+    data_variance = numpy.where(data_variance<1, 1.0, data_variance)
+
+	
     posterior_mean = data
     posterior_variance = data_variance
     evidence = numpy.exp(-((0 - numpy.sqrt(data_variance)) ** 2) / (2 * (0 + data_variance))) / numpy.sqrt(
