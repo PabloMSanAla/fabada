@@ -33,7 +33,7 @@ python thepythonfilename.py #assuming the python file is in the current director
 import struct
 import numpy
 import pyaudio
-from scipy.stats import chi2
+import scipy.stats
 
 
 def highpriority():
@@ -63,7 +63,7 @@ def highpriority():
 
 def fabada1x(data: [float]):
     # fabada expects the data as a floating point array, so, that is what we are going to work with.
-    max_iter: int = 96
+    max_iter: int = 128
     # move buffer calculations
     data = data / 1.0  # =# data.flatten() #numpy.flatten(data)#ravel(data)
     # Get the channels
@@ -89,13 +89,7 @@ def fabada1x(data: [float]):
     data_betal = numpy.asarray([(i + j + k / 3) for i, j, k in
                                zip(data_alphar_padded, data_alphar_padded[1:], data_alphar_padded[2:])])
     # get an array filled with the mean
-    # subtract the averages from the original
-   # data_beta = numpy.asarray([(i - j) for i, j in zip(data, data_beta)])
-    # subtract the averages from the original
-    # if subtracting the average would change the sign, leave the original
-    # data_residues = numpy.where(numpy.sign(data_alpha) != numpy.sign(data_residues), data_alpha, data_beta)
-    #data_residues = numpy.asarray(
-    #    [x if j + 0 - j == 0 and x + 0 - x == 0 else j for j, x in zip(data, data_beta)])
+
     # get the mean for the residuals left over and/or the original values
     x10r = numpy.mean(data_betar)
     x10l = numpy.mean(data_betal)
@@ -111,13 +105,10 @@ def fabada1x(data: [float]):
     # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
     variance5r = numpy.var(data_variance_residuesr)
     variance5l = numpy.var(data_variance_residuesl)
-
-   
     data_variancer =  numpy.asarray([x * variance5r for x in data_variance_residuesr])
     data_variancel =  numpy.asarray([x * variance5l for x in data_variance_residuesl])
     data_variance = numpy.concatenate((data_variancer, data_variancel), axis=None)
-    
-
+   
 
     posterior_mean = data
     posterior_variance = data_variance
@@ -162,7 +153,7 @@ def fabada1x(data: [float]):
 
         # EVALUATE CHI2
         chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
-        chi2_pdf = chi2.pdf(chi2_data, df=data.size)
+        chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=data.size)
         chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
         chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
