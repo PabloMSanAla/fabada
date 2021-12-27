@@ -48,7 +48,7 @@ def relay (data: [float]):
 
 def fabada1x(data: [float]):
     # fabada expects the data as a floating point array, so, that is what we are going to work with.
-    max_iter: int = 100 # as many as your cpu can handle, lol. 
+    max_iter: int = 200 # as many as your cpu can handle, lol.
     # move buffer calculations
     # Get the channels
     data = data.astype(float)
@@ -67,10 +67,8 @@ def fabada1x(data: [float]):
     data_variance =  numpy.asanyarray([(x * variance5) for x in data_variance_residues], dtype=float)
     data_variance_peak = numpy.mean(data_variance) ** 2
     #crush the variance at some high point to avoid over-estimating the peaks
-    #incidentally this also fixes one of the noise issues.
-    #crush the bottom also, this seems to reduce the clicking?
-    data_variance = numpy.where(data_variance<0.00001, 0.00001, data_variance)
-    data_variance = numpy.where(data_variance>100000,100000, data_variance)
+    #incidentally this also helps with one of the noise issues. Doesn't fully eliminat it when switchin frequencies, but helps.
+    data_variance = numpy.where(data_variance>data_variance_peak,data_variance_peak, data_variance)
 
     #data_variance = numpy.where(data_variance>data_variance_peak, data_variance_peak, data_variance)
     data_variance = numpy.where(data_variance<1, 1, data_variance)
