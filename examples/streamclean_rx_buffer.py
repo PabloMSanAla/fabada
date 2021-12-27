@@ -1,6 +1,6 @@
 """
 FABADA is a non-parametric noise reduction technique based on Bayesian
-inference that iteratively evaluates possibles moothed  models  of
+inference that iteratively evaluates possible smoothed  models  of
 the  data introduced,  obtaining  an  estimation  of the  underlying
 signal that is statistically  compatible  with the  noisy  measurements.
 
@@ -33,12 +33,10 @@ python thepythonfilename.py #assuming the python file is in the current director
 import struct
 import numpy
 import pyaudio
-from numba import jit, types
 from scipy.stats import chi2
 
 
 def highpriority():
-    """ Set the priority of the process to below-normal."""
 
     import sys
     try:
@@ -63,49 +61,6 @@ def highpriority():
         os.nice(-10)
 
 
-@jit(types.float64[:](types.float64[:]))
-def variance(data: [float]):
-    # establish baseline
-    data_alpha = data
-    # get an array of the mean
-    # establish buffer values for x/y/z so that I can get accurate averages for first and last elements.
-    # to be able to perform x+y+z/3 on all original elements, we need the first and last to work.
-    # to do that, we have to append a new value to both ends which won't distort the original.
-    # algebraicly, this is x/2 + y/2, where X and Y are the last and next to last of the original array.
-    avar = numpy.full((1,), (data_alpha[0] / 2) + (data_alpha[1] / 2))
-    zvar = numpy.full((1,), (data_alpha[-1] / 2) + (data_alpha[-2] / 2))
-    # insert the values before and after
-    data_alpha_padded = numpy.concatenate((avar, data_alpha, zvar))
-    # average the data
-    data_beta = numpy.asarray([(i + j + k / 3) for i, j, k in
-                               zip(data_alpha_padded, data_alpha_padded[1:], data_alpha_padded[2:])])
-    # get an array filled with the mean
-    # get the variance for each element from the mean
-
-    # subtract the averages from the original
-    # if subtracting the average would change the sign, leave the original
-    # data_residues = numpy.where(numpy.sign(data_alpha) != numpy.sign(data_residues), data_alpha, data_beta)
-    data_residues = numpy.asarray(
-        [x if j + 0 - j == 0 and x + 0 - x == 0 else j for j, x in zip(data_alpha, data_beta)])
-    # get the mean for the residuals left over and/or the original values
-    x10 = numpy.mean(data_residues)
-    data_mean_residues = numpy.full((32768,), x10)
-    # get the variance for the residue forms
-    data_variance_residues = numpy.asarray([abs(i - j) for i, j in zip(data_residues, data_mean_residues)])
-    # we assume beta is larger than residual.
-    # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
-    # after all, noise is very small in the time domain. Man-made noise isn't, but that's a different problem..
-    # minimum = # 1498258522.00 # in my experience this is the minimum amount of noise present
-    variance5 = numpy.var(data_variance_residues)
-    # data_variance_minimum = numpy.full((16384,), minimum)
-    data = numpy.asarray([x * variance5 for x in data_variance_residues])
-    # keep the value from going below the noise barrier. We generally see more noise than this.
-    # data  = numpy.asarray([max(i,j) for i, j in zip(data, data_variance_minimum)])
-
-    return data
-
-
-# @jit(types.float64[:](types.float64[:]))
 def fabada1x(data: [float]):
     # fabada expects the data as a floating point array, so, that is what we are going to work with.
     max_iter: int = 96
@@ -120,8 +75,50 @@ def fabada1x(data: [float]):
     # convert to floating point values edit: for numba, move this out of code
     # data = numpy.array(data,dtype=float)
     # copy data
+    avarl = numpy.full((1,), (dleft[0] / 2) + (dleft[1] / 2))
+    zvarl = numpy.full((1,), (dleft[-1] / 2) + (dleft[-2] / 2))
+    avarr = numpy.full((1,), (dright[0] / 2) + (dright[1] / 2))
+    zvarr = numpy.full((1,), (dright[-1] / 2) + (dright[-2] / 2))
+    # insert the values before and after
+    data_alphal_padded = numpy.concatenate((avarl, dleft, zvarl))
+    data_alphar_padded = numpy.concatenate((avarr, dright, zvarr))
 
-    data_variance = variance(data)
+    # average the data
+    data_betar = numpy.asarray([(i + j + k / 3) for i, j, k in
+                               zip(data_alphal_padded, data_alphal_padded[1:], data_alphal_padded[2:])])
+    data_betal = numpy.asarray([(i + j + k / 3) for i, j, k in
+                               zip(data_alphar_padded, data_alphar_padded[1:], data_alphar_padded[2:])])
+    # get an array filled with the mean
+    # subtract the averages from the original
+   # data_beta = numpy.asarray([(i - j) for i, j in zip(data, data_beta)])
+    # subtract the averages from the original
+    # if subtracting the average would change the sign, leave the original
+    # data_residues = numpy.where(numpy.sign(data_alpha) != numpy.sign(data_residues), data_alpha, data_beta)
+    #data_residues = numpy.asarray(
+    #    [x if j + 0 - j == 0 and x + 0 - x == 0 else j for j, x in zip(data, data_beta)])
+    # get the mean for the residuals left over and/or the original values
+    x10r = numpy.mean(data_betar)
+    x10l = numpy.mean(data_betal)
+
+    data_mean_residuesr = numpy.full((32768,), x10r)
+    data_mean_residuesl = numpy.full((32768,), x10l)
+
+    # get the variance for the residue forms
+    data_variance_residuesr = numpy.asarray([abs(i - j) for i, j in zip(data_betar, data_mean_residuesr)])
+    data_variance_residuesl = numpy.asarray([abs(i - j) for i, j in zip(data_betal, data_mean_residuesl)])
+
+    # we assume beta is larger than residual.
+    # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
+    variance5r = numpy.var(data_variance_residuesr)
+    variance5l = numpy.var(data_variance_residuesl)
+
+   
+    data_variancer =  numpy.asarray([x * variance5r for x in data_variance_residuesr])
+    data_variancel =  numpy.asarray([x * variance5l for x in data_variance_residuesl])
+    data_variance = numpy.concatenate((data_variancer, data_variancel), axis=None)
+    
+
+
     posterior_mean = data
     posterior_variance = data_variance
     evidence = numpy.exp(-((0 - numpy.sqrt(data_variance)) ** 2) / (2 * (0 + data_variance))) / numpy.sqrt(
@@ -195,12 +192,6 @@ def fabada1x(data: [float]):
     return data2
 
 
-# @jit(nopython=True)
-# def PSNR(recover, signal, L=255):
-#   MSE = numpy.sum((recover - signal) ** 2) / (recover.size)
-#   return 10 * numpy.log10((L) ** 2 / MSE)
-
-
 class StreamSampler(object):
 
     def __init__(self):
@@ -224,7 +215,7 @@ class StreamSampler(object):
             if devinfo['maxInputChannels'] == 2:
                 for keyword in ["microsoft"]:
                     if keyword in devinfo["name"].lower():
-                        print("Found an input: device %d - %s" % (i, devinfo["name"]))
+                        print(("Found an input: device %d - %s" % (i, devinfo["name"])))
                         device_index = i
                         self.micindex = device_index
 
@@ -250,7 +241,7 @@ class StreamSampler(object):
             if devinfo['maxOutputChannels'] == 2:
                 for keyword in ["microsoft"]:
                     if keyword in devinfo["name"].lower():
-                        print("Found an output: device %d - %s" % (i, devinfo["name"]))
+                        print(("Found an output: device %d - %s" % (i, devinfo["name"])))
                         device_index = i
                         self.speakerindex = device_index
 
@@ -269,15 +260,11 @@ class StreamSampler(object):
 
     # it is critical that this function do as little as possible
     def non_blocking_stream_read(self, in_data, frame_count, time_info, status):
-        # return self.buffer.write_value(list(self.unpack_ushort(memoryview(in_data))),length=32768 ,move_start=False, error=False),pyaudio.paContinue
         self.xbuffer[0, :] = list(self.unpack_ushort(in_data))
         return None, pyaudio.paContinue
-        # return self.buffer.write_value(numpy.frombuffer(in_data, count=32768, dtype=numpy.int16) ,
-        #                            length=32768,move_start=False, error=False), pyaudio.paContinue
+
 
     def non_blocking_stream_write(self, in_data, frame_count, time_info, status):
-        # return fabada1x(self.buffer._data[0,:]), pyaudio.paContinue
-        # print(self.xbuffer[0,:])
         return fabada1x(self.xbuffer[0, :]), pyaudio.paContinue
 
     def stream_start(self):
@@ -286,7 +273,7 @@ class StreamSampler(object):
 
         self.speakerstream.start_stream()
         while self.micstream.is_active():
-            input("main thread is now paused")
+            eval(input("main thread is now paused"))
         return
 
     def listen(self):
