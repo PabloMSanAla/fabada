@@ -35,6 +35,7 @@ from scipy.stats import chi2
 from numba import jit, types
 import np_rw_buffer
 import numpy
+import time
 
 @jit(types.float64[:](types.float64[:]))
 def variance(data: [float]):
@@ -187,7 +188,7 @@ class StreamSampler(object):
         self.pa = pyaudio.PyAudio()
         self.micindex = 1
         self.speakerindex = 1
-        self.buffer = np_rw_buffer.RingBuffer(16384 * 4, 0, numpy.int16)
+        self.buffer = np_rw_buffer.RingBuffer(16384, 0, numpy.int16)
         self.micstream = self.open_mic_stream()
         self.speakerstream = self.open_speaker_stream()
         self.errorcount = 0
@@ -253,7 +254,7 @@ class StreamSampler(object):
                                      length=16384, error=False), pyaudio.paContinue
 
     def non_blocking_stream_write(self, in_data, frame_count, time_info, status):
-        print(" got to here ")
+        time.sleep(0.001)
         return fabada1x(numpy.asarray(self.buffer.read_overlap(amount=16384, increment=16384),
                                       dtype=float)), pyaudio.paContinue
 
