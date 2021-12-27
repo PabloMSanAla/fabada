@@ -42,7 +42,8 @@ def relay (data: [float]):
     dleft =  fabada1x(dleft)
     dright =  fabada1x(dright)
     data = numpy.concatenate((dleft, dright))
-    data2 = numpy.column_stack(numpy.split(data, 2)).ravel().astype(numpy.int16)
+    data2 = numpy.column_stack(numpy.split(data, 2)).ravel().astype(numpy.int16)    data = numpy.concatenate((dleft, dright))
+
     return data2
 
 
