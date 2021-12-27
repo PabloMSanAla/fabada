@@ -65,50 +65,41 @@ def fabada1x(data: [float]):
     # fabada expects the data as a floating point array, so, that is what we are going to work with.
     max_iter: int = 128
     # move buffer calculations
-    data = data / 1.0  # =# data.flatten() #numpy.flatten(data)#ravel(data)
+    data = data.astype(numpy.float)
+	
     # Get the channels
 
-    dleft, dright = data[0::2], data[1::2]
+    dleft, dright = memoryview(data[0::2]), memoryview(data[1::2])
     # concat the channel samples as two separate arrays. Remember to reverse this before the end!
     data = numpy.concatenate((dleft, dright))
 
-    # convert to floating point values edit: for numba, move this out of code
-    # data = numpy.array(data,dtype=float)
-    # copy data
-    avarl = numpy.full((1,), (dleft[0] / 2) + (dleft[1] / 2))
-    zvarl = numpy.full((1,), (dleft[-1] / 2) + (dleft[-2] / 2))
-    avarr = numpy.full((1,), (dright[0] / 2) + (dright[1] / 2))
-    zvarr = numpy.full((1,), (dright[-1] / 2) + (dright[-2] / 2))
     # insert the values before and after
-    data_alphal_padded = numpy.concatenate((avarl, dleft, zvarl))
-    data_alphar_padded = numpy.concatenate((avarr, dright, zvarr))
+    data_alphal_padded = numpy.concatenate((numpy.full((1,), (dleft[0] / 2) + (dleft[1] / 2)), dleft, numpy.full((1,), (dleft[-1] / 2) + (dleft[-2] / 2))))
+    data_alphar_padded = numpy.concatenate((numpy.full((1,), (dright[0] / 2) + (dright[1] / 2)), dright, numpy.full((1,), (dright[-1] / 2) + (dright[-2] / 2))))
 
     # average the data
-    data_betar = numpy.asarray([(i + j + k / 3) for i, j, k in
-                               zip(data_alphal_padded, data_alphal_padded[1:], data_alphal_padded[2:])])
-    data_betal = numpy.asarray([(i + j + k / 3) for i, j, k in
-                               zip(data_alphar_padded, data_alphar_padded[1:], data_alphar_padded[2:])])
+    
+    data_betar = numpy.asanyarray([(i + j + k / 3) for i, j, k in
+                               zip(data_alphal_padded, data_alphal_padded[1:], data_alphal_padded[2:])], dtype=float)
+    data_betal = numpy.asanyarray([(i + j + k / 3) for i, j, k in
+                               zip(data_alphar_padded, data_alphar_padded[1:], data_alphar_padded[2:])], dtype=float)
     # get an array filled with the mean
 
     # get the mean for the residuals left over and/or the original values
-    x10r = numpy.mean(data_betar)
-    x10l = numpy.mean(data_betal)
-
-    data_mean_residuesr = numpy.full((32768,), x10r)
-    data_mean_residuesl = numpy.full((32768,), x10l)
 
     # get the variance for the residue forms
-    data_variance_residuesr = numpy.asarray([abs(i - j) for i, j in zip(data_betar, data_mean_residuesr)])
-    data_variance_residuesl = numpy.asarray([abs(i - j) for i, j in zip(data_betal, data_mean_residuesl)])
+    data_variance_residuesr = numpy.asanyarray([abs(i - j) for i, j in zip(data_betar, numpy.full((32768,), numpy.mean(data_betar)))], dtype=float)
+    data_variance_residuesl = numpy.asanyarray([abs(i - j) for i, j in zip(data_betal, numpy.full((32768,), numpy.mean(data_betal)))], dtype=float)
 
     # we assume beta is larger than residual.
     # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
     variance5r = numpy.var(data_variance_residuesr)
     variance5l = numpy.var(data_variance_residuesl)
-    data_variancer =  numpy.asarray([x * variance5r for x in data_variance_residuesr])
-    data_variancel =  numpy.asarray([x * variance5l for x in data_variance_residuesl])
+	
+    data_variancer =  numpy.asanyarray([x * variance5r for x in data_variance_residuesr], dtype=float)
+    data_variancel =  numpy.asanyarray([x * variance5l for x in data_variance_residuesl], dtype=float)
+	
     data_variance = numpy.concatenate((data_variancer, data_variancel), axis=None)
-   
 
     posterior_mean = data
     posterior_variance = data_variance
@@ -177,7 +168,7 @@ def fabada1x(data: [float]):
             bayesian_weight += model_weight
             bayesian_model += model_weight * data
 
-    bayes = numpy.array(bayesian_model / bayesian_weight)
+    bayes = numpy.asanyarray((bayesian_model / bayesian_weight), dtype=float)
     # recombine the channels into one interleaved set of samples
     data2 = numpy.column_stack(numpy.split(bayes, 2)).ravel().astype(numpy.int16)
     return data2
@@ -261,7 +252,6 @@ class StreamSampler(object):
     def stream_start(self):
         highpriority()
         self.micstream.start_stream()
-
         self.speakerstream.start_stream()
         while self.micstream.is_active():
             eval(input("main thread is now paused"))
