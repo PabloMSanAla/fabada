@@ -329,8 +329,8 @@ class StreamSampler(object):
                               channels=self.channels,
                               rate=int(self.sample_rate),
                               input=True,
-                              # input_device_index=self.micindex,  # device_index,
-                              # frames_per_buffer=16384,  # Do you really need to set this? Default is 1024 I think
+                              input_device_index=self.micindex,  # device_index,
+                              # frames_per_buffer=16384,  # Don't really need this? Default is 1024 I think
                               stream_callback=self.non_blocking_stream_read,
                               start=False  # Need start to be False if you don't want this to start right away
                               )
@@ -356,7 +356,7 @@ class StreamSampler(object):
                               channels=self.channels,
                               rate=int(self.sample_rate),
                               output=True,
-                              # output_device_index=self.speakerindex,
+                              output_device_index=self.speakerindex,
                               frames_per_buffer=self.processing_size,  # Might need this for the output since you are looking for a specific size.
                               stream_callback=self.non_blocking_stream_write,
                               start=False  # Need start to be False if you don't want this to start right away
@@ -365,13 +365,12 @@ class StreamSampler(object):
 
     # it is critical that this function do as little as possible, as fast as possible. numpy.ndarray is the fastest we can move.
     def non_blocking_stream_read(self, in_data, frame_count, time_info, status):
-        audio_in = numpy.frombuffer(in_data, dtype=self.dtype).reshape((-1, self.channels))  # frame count will be num rows
+        audio_in = numpy.frombuffer(in_data, dtype=self.dtype).reshape((-1, self.channels))
         self.rb.write(audio_in, error=False)
-
-        # self.rb.append(numpy.ndarray(buffer=in_data, dtype=numpy.int16, shape=[32768]))
         return None, pyaudio.paContinue
 
     def non_blocking_stream_write(self, in_data, frame_count, time_info, status):
+        # Read raw data
         # filtered = self.rb.read(frame_count)
         # if len(filtered) < frame_count:
         #     filtered = numpy.zeros((frame_count, self.channels), dtype=self.dtype)
@@ -379,8 +378,6 @@ class StreamSampler(object):
         filtered = self.process_audio()
         byts_out = filtered.astype(self.dtype).tobytes()
         return byts_out, pyaudio.paContinue
-
-        # return relay(self.rb[-1]), pyaudio.paContinue
 
     def stream_start(self):
         if self.micstream is None:
