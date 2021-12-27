@@ -104,7 +104,6 @@ def fabada1x(data: [float]):
     #define the number of iterations based on the SNR of the sample, where noisier samples need more work.
     # the most this can be is around 40 to -80, inverted, adds max of 80, subtracts most of 40.
     max_iter: int = 50 + int(numpy.nan_to_num((signaltonoise_dB(data, axis=0, ddof=0) * -1.0),posinf=80.0,neginf=-40))
-    print(max_iter)
     # move buffer calculations
     # Get the channels
     data = data.astype(float)
