@@ -62,13 +62,19 @@ def variance(data: [float],processing_size: float):
         #however for numpa to work the Nan processing has to be done elsewhere, thus export variance5 for the bounding
         return data_variance,variance5
 
-@numba.jit #((numba.float64[:],numba.float64)(numba.float64))
-def signaltonoise_dB(data: [float], processing_size: float):
+@numba.jit ((numba.float64)(numba.float64[:]))
+def signaltonoise_dB(data: [float]):
         axis= 0#hardcode, we're doing data
         ddof=1 #because i like it better than 0, its what pandas uses?
-        m = data.mean(axis)
-        sd = data.std(axis=axis, ddof=ddof)
-        return 20*numpy.log10(abs(numpy.where(sd == 0, 0, m/sd)))
+        data = data / 1.0
+        m = data.mean()
+        sd = data.std()
+        if sd == 0:
+            xl = 0
+        else:
+            xl = m/sd
+        xd = abs(xl)
+        return 20*numpy.log10(xd)
 
 @numba.jit #((numba.float64[:],numba.float64[:],numba.float64,numba.float64)(numba.float64))
 def evaluate(prior_mean: [float],data: [float],prior_variance: float,data_variance: float):
@@ -82,6 +88,13 @@ def Evidence_start(data_variance: [float]):
             2 * numpy.pi * (0 + data_variance))
         return x
 
+
+#notes: this particular function call is PRIORITY NUMBER ONE
+# IT TAKES ALL of the time budget for this code, and CANT be accelerated with numba.
+def chi2_pdf_call(data: [float],size):
+    pdf = scipy.stats.chi2.pdf(data, df=size)
+    return pdf
+
 class Filter(object):
 
     def __init__(self, processing_size=16384, sample_rate=48000):
@@ -89,10 +102,6 @@ class Filter(object):
         self._processing_size = processing_size
         # np_rw_buffer (AudioFramingBuffer offers a delay time)
         self._sample_rate = sample_rate
-
-    #@numba.jit(nopython=True) # for some reason this cant devide by zero when compiled
-
-
 
     def __PSNR(self,recover, signal, L=255):
         MSE = numpy.sum((recover - signal) ** 2) / (recover.size)
@@ -102,13 +111,12 @@ class Filter(object):
         # fabada expects the data as a floating point array, so, that is what we are going to work with.
         #define the number of iterations based on the SNR of the sample, where noisier samples need more work.
         # the most this can be is around 40 to -80, inverted, adds max of 80, subtracts most of 40.
-        max_iter: int = 50 + int(numpy.nan_to_num((signaltonoise_dB(data,self._processing_size) * -1.0),posinf=80.0,neginf=-40))
-        print("iterations in current cycle: ")
-        print(max_iter)
-        # move buffer calculations
+        #If the SNR is high, fabada doesnt seem to be able to do as much. Perhaps I am wrong.
         # Get the channels
         data = data.astype(float)
-        # insert the values before and after
+        max_iter: int = 50 + int((signaltonoise_dB(data) * -1.0))
+
+        # move buffer calculations
         posterior_mean = data
         data_variance ,var5 = variance(data,self._processing_size)
         #prevents overflows
@@ -153,7 +161,12 @@ class Filter(object):
 
             # EVALUATE CHI2
             chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
-            chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=data.size)
+
+            #TODO: this entire function could be made accelerated if numba supported scipy stats.
+            #However, it does not, so it may be that this work will have to be refactored to minimize that call.
+            #ironically, this program spends the most amount of time calling this function: 600ms!
+
+            chi2_pdf =  chi2_pdf_call(chi2_data, data.size)
             chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
             chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
