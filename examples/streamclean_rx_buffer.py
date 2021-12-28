@@ -40,7 +40,7 @@ from threading import Thread
 import time
 
 
-#@numba.jit ((numba.float64)(numba.float64[:]))
+@numba.jit ((numba.float64)(numba.float64[:]))
 def signaltonoise_dB(data: [float]):
         data = data / 1.0
         m = data.mean()
@@ -52,7 +52,7 @@ def signaltonoise_dB(data: [float]):
         xd = abs(xl)
         return 20*numpy.log10(xd)
 
-#@numba.jit #((numba.float64[:],numba.float64[:],numba.float64,numba.float64)(numba.float64))
+@numba.jit #((numba.float64[:],numba.float64[:],numba.float64,numba.float64)(numba.float64))
 def evaluate(prior_mean: [float],data: [float],prior_variance: float,data_variance: float):
         x = numpy.exp(-((prior_mean - data) ** 2) / (2 * (prior_variance + data_variance))) / numpy.sqrt(
             2 * numpy.pi * (prior_variance + data_variance))
@@ -60,13 +60,13 @@ def evaluate(prior_mean: [float],data: [float],prior_variance: float,data_varian
 
 #evidence = Evidence(0, numpy.sqrt(data_variance), 0, data_variance)
 #Evidence(prior_mean, data, prior_variance, data_variance)
-#@numba.jit #((numba.float64[:])(numba.float64))
+@numba.jit #((numba.float64[:])(numba.float64))
 def Evidence(mu1, mu2, var1, var2):
     return numpy.exp(-((mu1 - mu2) ** 2) / (2 * (var1 + var2))) / numpy.sqrt(
         2 * numpy.pi * (var1 + var2)
     )
 
-#@numba.jit# ((numba.float64[:]) (numba.types.Tuple(numba.float64[:],numba.int16)))
+@numba.jit# ((numba.float64[:]) (numba.types.Tuple(numba.float64[:],numba.int16)))
 def running_mean(data: [float],dim: int):
     data = data/ 1.0
     mean = data.copy()
@@ -81,6 +81,10 @@ def running_mean(data: [float],dim: int):
         print("Warning: Size of array not supported in numba!")
     return mean
 
+@numba.jit
+def posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance):
+
+    return ( prior_mean / prior_variance + data / data_variance ) * posterior_variance
 
 
 #notes: this particular function call takes on average 70ms to 100ms to complete
@@ -123,7 +127,7 @@ class Filter(object):
       if not kwargs:
           kwargs = {}
           kwargs["debug"] = False
-      print(data.shape)
+
       if verbose:
           if len(data.shape) == 1:
               print("FABADA 1-D initialize")
@@ -132,8 +136,27 @@ class Filter(object):
           else:
               print("Warning: Size of array not supported")
 
-      if data_variance.size != data.size:
-          data_variance = data_variance * numpy.ones_like(data)
+      #if data_variance.size != data.size:
+      data_variance = data_variance * numpy.ones_like(data)
+      #aight lets sanitize!
+      data = numpy.nan_to_num(data, posinf=1, neginf=1)
+      data[data < 1] = 1
+
+      data_median = numpy.median(data)
+      data_mean = numpy.mean(data)
+      datamax = numpy.amax(data)
+      datamin = numpy.amin(data)
+      range = abs(datamin - datamax)
+      difference = abs(data_median - data_mean)
+      if difference < (range/10):
+          data_mean = data_median #robustified against outliers
+      data_mean = numpy.mean(data) * numpy.ones_like(data)
+
+      power = numpy.nan_to_num(numpy.square(data),neginf=1,posinf=1)
+      floor = data_mean * numpy.ones_like(data)
+      data_variance = abs(data_mean - data)
+
+      #print(data_variance)
 
       # INITIALIZING ALGORITMH ITERATION ZERO
       posterior_mean = data
@@ -161,10 +184,12 @@ class Filter(object):
               prior_variance = posterior_variance
 
               # APPLIY BAYES' THEOREM
+              #prevent le' devide by le zeros
+              prior_variance[prior_variance == 0] = 0.0000001
+              data_variance[data_variance == 0] = 0.0000001
+
               posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
-              posterior_mean = (
-                                       prior_mean / prior_variance + data / data_variance
-                               ) * posterior_variance
+              posterior_mean =  posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance)
 
               # EVALUATE EVIDENCE
               evidence = Evidence(prior_mean, data, prior_variance, data_variance)
