@@ -34,7 +34,10 @@ import pyaudio
 import scipy.stats
 import numba
 from np_rw_buffer import RingBuffer, AudioFramingBuffer
-from timeit import default_timer as timer
+import scipy.signal
+from threading import Thread
+import time
+
 
 @numba.jit #((numba.float64[:],numba.float64)(numba.float64[:], numba.float64))
 def variance(data: [float]):
@@ -55,6 +58,7 @@ def variance(data: [float]):
         data_variance_residues = numpy.absolute(data_beta - data)
         # we assume beta is larger than residual. after all, few values will be outliers.
         # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
+        data_variance_residues = numpy.absolute(data_beta - data_variance_residues)
         variance5 = abs(numpy.var(data_variance_residues)) * 1.61803398875
 
         data_variance =  data_variance_residues * variance5
@@ -82,9 +86,13 @@ def evaluate(prior_mean: [float],data: [float],prior_variance: float,data_varian
 
 @numba.jit #((numba.float64[:])(numba.float64))
 def Evidence_start(data_variance: [float]):
+    try:
         x = numpy.exp(-((0 - numpy.sqrt(data_variance)) ** 2) / (2 * (0 + data_variance))) / numpy.sqrt(
             2 * numpy.pi * (0 + data_variance))
         return x
+    except:
+        print("divided by zero! value was : ", data_variance)
+        return 1.0
 
 @numba.jit ((numba.float64[:])(numba.float64[:]))
 def running_mean(data: [float]):
@@ -127,7 +135,7 @@ class Filter(object):
         #If the SNR is high, fabada doesnt seem to be able to do as much. Perhaps I am wrong.
         # Get the channels
         data = data.astype(float)
-
+        #weiner = scipy.signal.wiener(data)
         #todo: perhaps do better SNR/variance calculations based on power estimation?
         #P_s = 1;   % target signal power
         #SNR = 15;  % target SNR in dB
@@ -141,6 +149,9 @@ class Filter(object):
         #also, this results in MORE noise being injected into the stream, because FABAS doesn't know about
         #passbands and so doesnt know what it's being fed has a high-pass filter on it.
         #as a result, number of cycles has to be hardcoded
+
+
+
         max_iter: int = 100 #+ int(numpy.nan_to_num(signaltonoise_dB(data),neginf=-50,posinf=50)* -1.0)
         # move buffer calculations
         posterior_mean = data
@@ -150,7 +161,6 @@ class Filter(object):
 
         posterior_variance = data_variance
         evidence = Evidence_start(data_variance)
-
         initial_evidence = evidence
         chi2_pdf, chi2_data, iteration = 0, data.size, 0
         chi2_pdf_derivative, chi2_data_min = 0, data.size
@@ -185,8 +195,6 @@ class Filter(object):
 
 
             chi2_pdf =  chi2_pdf_call(chi2_data, data.size)
-
-            start = timer()
             chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
             chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
@@ -213,6 +221,61 @@ class Filter(object):
 
         data = bayesian_model /bayesian_weight
         return data
+
+
+###
+#'''
+#From mozilla:
+
+#''Stereo audio is probably the most commonly used channel arrangement in web audio, and 16-bit samples are used for the majority of day-to-day audio in use today.
+# For 16-bit stereo audio, each sample taken from the analog signal is recorded as two 16-bit integers, one for the left channel and one for the right.
+# That means each sample requires 32 bits of memory.
+# At the common sample rate of 48 kHz (48,000 samples per second), this means each second of audio occupies 192 kB of memory. ''
+
+#Our processing size is 16384 frames * 2(for the channels), 16 bit memory.
+#96000kB represents one second worth of data in frames-KB.
+#96kb represents 1MS.
+#64 frames are in one kilobit.
+#1ms is equivalent to about 1500 frames.
+
+#at 2048 frames, it happens about once evey 48ms
+#at 4096 it happens every 86
+#at 8192 it happens according to an irregular pattern:
+#once every 172 there will be a weaker click
+#every 2 or 4 there will be a stronger click
+#'''
+
+class FilterRun(Thread):
+    def __init__(self,rb,pb,channels,processing_size,dtype):
+        super(FilterRun, self).__init__()
+        self.running = True
+        self.filter = Filter()
+        self.rb = rb
+        self.processedrb = pb
+        self.channels = channels
+        self.processing_size = processing_size
+        self.dtype = dtype
+        self.buffer = numpy.ndarray(dtype=self.dtype, shape=[int(self.processing_size * self.channels)])
+        self.buffer = self.buffer.reshape(-1,self.channels)
+    def write_filtered_data(self):
+        audio = self.rb.read(self.processing_size)
+        for i in range(self.channels):
+            filtered = self.filter.fabada(audio[:, i])
+            self.buffer[:, i] = filtered
+        self.processedrb.write(self.buffer, error=True)
+
+    def run(self):
+        while 1:
+            if len(self.rb) < self.processing_size * 2:
+                time.sleep(0.001)
+            else:
+                self.write_filtered_data()
+                #time.sleep(0.01)
+
+    def stop(self):
+        self.running = False
+
+
 
 class StreamSampler(object):
 
@@ -243,7 +306,7 @@ class StreamSampler(object):
         return cls.dtype_to_paformat[dtype.name]
 
     def __init__(self, processing_size=16384, sample_rate=48000, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
-                 micindex=1, speakerindex=1, dtype=numpy.int32): #int32 works just as fast as int16, maybe adds some precision
+                 micindex=1, speakerindex=1, dtype=numpy.int16):
         self.pa = pyaudio.PyAudio()
         self._processing_size = processing_size
         self.filter = Filter()
@@ -254,9 +317,15 @@ class StreamSampler(object):
         # self.rb = RingBuffer((int(sample_rate) * 5, channels), dtype=numpy.dtype(dtype))
         self.rb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
                                      seconds=5,  # Buffer size (need larger than processing size)[seconds * sample_rate]
+                                     buffer_delay=0,  # #this buffer doesnt need to have a size
+                                     dtype=numpy.dtype(dtype))
+
+        self.processedrb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
+                                     seconds=5,  # Buffer size (need larger than processing size)[seconds * sample_rate]
                                      buffer_delay=buffer_delay,  # Save data for 1 second then start playing
                                      dtype=numpy.dtype(dtype))
 
+        self.filterthread = FilterRun(self.rb,self.processedrb,self._channels,self._processing_size,self.dtype)
         self.micindex = micindex
         self.speakerindex = speakerindex
         self.micstream = None
@@ -283,10 +352,12 @@ class StreamSampler(object):
         self._sample_rate = value
         try:  # RingBuffer
             self.rb.maxsize = int(value * 5)
+            self.processedrb.maxsize = int(value * 5)
         except AttributeError:
             pass
         try:  # AudioFramingBuffer
             self.rb.sample_rate = value
+            self.processedrb.sample_rate = value
         except AttributeError:
             pass
         self._update_streams()
@@ -300,10 +371,12 @@ class StreamSampler(object):
         self._channels = value
         try:  # RingBuffer
             self.rb.columns = value
+            self.processedrb.columns = value
         except AttributeError:
             pass
         try:  # AudioFrammingBuffer
             self.rb.channels = value
+            self.processedrb.channels = value
         except AttributeError:
             pass
         self._update_streams()
@@ -346,6 +419,7 @@ class StreamSampler(object):
     def buffer_delay(self, value):
         try:
             self.rb.buffer_delay = value
+            self.processedrb.buffer_delay = value
         except AttributeError:
             pass
 
@@ -431,7 +505,6 @@ class StreamSampler(object):
 
     # it is critical that this function do as little as possible, as fast as possible. numpy.ndarray is the fastest we can move.
     # attention: numpy.ndarray is actually faster than frombuffer for known buffer sizes
-    # memoryview avoids the copy by merely being a view
     def non_blocking_stream_read(self, in_data, frame_count, time_info, status):
         audio_in = memoryview(numpy.ndarray(buffer=memoryview(in_data), dtype=self.dtype, shape=[int(self._processing_size* self._channels)]).reshape(-1, self.channels))
         self.rb.write(audio_in, error=False)
@@ -442,10 +515,18 @@ class StreamSampler(object):
         # filtered = self.rb.read(frame_count)
         # if len(filtered) < frame_count:
         #     filtered = numpy.zeros((frame_count, self.channels), dtype=self.dtype)
+        if len(self.processedrb) < self.processing_size:
+            print('Not enough data to play! Increase the buffer_delay')
+            audio = numpy.zeros((self.processing_size, self.channels), dtype=self.dtype)
+            return audio, pyaudio.paContinue
 
-        filtered = self.process_audio()
-        byts_out = filtered.astype(self.dtype).tobytes()
-        return byts_out, pyaudio.paContinue
+        audio = self.processedrb.read(self.processing_size)
+        chans = []
+        for i in range(self.channels):
+            filtered = audio[:, i]
+            chans.append(filtered)
+
+        return numpy.column_stack(chans).astype(self.dtype).tobytes(), pyaudio.paContinue
 
     def stream_start(self):
         if self.micstream is None:
@@ -455,26 +536,12 @@ class StreamSampler(object):
         if self.speakerstream is None:
             self.speakerstream = self.open_speaker_stream()
         self.speakerstream.start_stream()
-
+        self.filterthread.start()
         # Don't do this here. Do it in main. Other things may want to run while this stream is running
         # while self.micstream.is_active():
         #     eval(input("main thread is now paused"))
 
     listen = stream_start  # Just set a new variable to the same method
-
-    def process_audio(self):
-        if len(self.rb) < self.processing_size:
-            print('Not enough data in the buffer! Increase the buffer_delay')
-            return numpy.zeros((self.processing_size, self.channels), dtype=self.dtype)
-
-        audio = self.rb.read(self.processing_size)
-        chans = []
-        for i in range(self.channels):
-            filtered = self.filter.fabada(audio[:, i])
-            chans.append(filtered)
-
-        # Could buffer again then the output would just take from the buffer
-        return numpy.column_stack(chans)
 
 
 if __name__ == "__main__":
