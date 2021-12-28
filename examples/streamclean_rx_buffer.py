@@ -29,23 +29,6 @@ pipwin install pyaudio #assuming you're on windows
 python thepythonfilename.py #assuming the python file is in the current directory
 
 """
-FABADA is a non-parametric noise reduction technique based on Bayesian
-inference that iteratively evaluates possible smoothed  models  of
-the  data introduced,  obtaining  an  estimation  of the  underlying
-signal that is statistically  compatible  with the  noisy  measurements.
-
-based on P.M. Sanchez-Alarcon, Y. Ascasibar, 2022
-"Fully Adaptive Bayesian Algorithm for Data Analysis. FABADA"
-
-Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
-Everyone is permitted to copy and distribute verbatim copies
-of this license document, but changing it is not allowed.
-
-
-
-
-
-import struct
 import numpy
 import pyaudio
 import scipy.stats
@@ -60,26 +43,7 @@ from np_rw_buffer import RingBuffer, AudioFramingBuffer
 #    dleft = fabada1x(dleft)
 #    dright = fabada1x(dright)
  #   data = numpy.concatenate((dleft, dright))
-    data2 = #only needed for channels numpy.column_stack(numpy.split(data, 2)).ravel().astype(numpy.int16)    data = numpy.concatenate((dleft, dright))"""
-
-
-Instructions:
-Save the code as a .py file.
-Install the latest miniforge for you into a folder, don't add it to path, launch it from start menu.
-Note: if python is installed elsewhere this may fail. If it fails, try this again with miniconda instead,
-as miniconda doesn't install packages to the system library locations.
-
-https://github.com/conda-forge/miniforge/#download
-
-https://docs.conda.io/en/latest/miniconda.html
-(using miniforge command line window)
-conda install numba, scipy, numpy, pipwin
-pip install pipwin
-pipwin install pyaudio #assuming you're on windows
-
-python thepythonfilename.py #assuming the python file is in the current directory
-
-"""
+ #   data2 = #only needed for channels numpy.column_stack(numpy.split(data, 2)).ravel().astype(numpy.int16)    data = numpy.concatenate((dleft, dright))"""
 
 #(numba.types.Tuple((numba.float64[:],numba.float64[:],numba.float64,numba.float64))(numba.float64[:]))
 @numba.jit(nopython=True)
