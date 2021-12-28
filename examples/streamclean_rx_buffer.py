@@ -123,7 +123,15 @@ class Filter(object):
         #If the SNR is high, fabada doesnt seem to be able to do as much. Perhaps I am wrong.
         # Get the channels
         data = data.astype(float)
-        max_iter: int = 50 + int((signaltonoise_dB(data) * -1.0))
+
+        #todo: perhaps do better SNR/variance calculations based on power estimation?
+        #P_s = 1;   % target signal power
+        #SNR = 15;  % target SNR in dB
+        #P_n = P_s / 10^(SNR/10); % calculated noise power
+        #s = randn(1,N)*sqrt(P_s);
+        #v = randn(1,N)*sqrt(P_n);
+        #y = a*s + v;
+        max_iter: int = 60 + int(numpy.nan_to_num((signaltonoise_dB(data) * -1.0),neginf=-50,posinf=50))
 
         # move buffer calculations
         posterior_mean = data
@@ -412,7 +420,7 @@ class StreamSampler(object):
     # attention: numpy.ndarray is actually faster than frombuffer for known buffer sizes
     # memoryview avoids the copy by merely being a view
     def non_blocking_stream_read(self, in_data, frame_count, time_info, status):
-        audio_in = memoryview(numpy.ndarray(buffer=memoryview(in_data), dtype=self.dtype, shape=[int(self._processing_size* self._channels)]) .reshape(-1, self.channels))
+        audio_in = memoryview(numpy.ndarray(buffer=memoryview(in_data), dtype=self.dtype, shape=[int(self._processing_size* self._channels)]).reshape(-1, self.channels))
         self.rb.write(audio_in, error=False)
         return None, pyaudio.paContinue
 
