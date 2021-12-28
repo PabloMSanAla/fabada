@@ -34,6 +34,7 @@ import pyaudio
 import scipy.stats
 import numba
 from np_rw_buffer import RingBuffer, AudioFramingBuffer
+from timeit import default_timer as timer
 
 @numba.jit #((numba.float64[:],numba.float64)(numba.float64[:], numba.float64))
 def variance(data: [float]):
@@ -100,10 +101,13 @@ def running_mean(data: [float]):
 
 
 
-#notes: this particular function call is PRIORITY NUMBER ONE
-# IT TAKES ALL of the time budget for this code, and CANT be accelerated with numba.
+#notes: this particular function call takes on average 70ms to 100ms to complete
 def chi2_pdf_call(data: [float],size):
+    #start = timer()
     pdf = scipy.stats.chi2.pdf(data, df=size)
+    #end = timer()
+    #time = (end - start) * 1000000.00  # Time in seconds, e.g. 5.38091952400282
+    #print("chi2.pdf took : ", time, " ms!")
     return pdf
 
 class Filter(object):
@@ -131,8 +135,13 @@ class Filter(object):
         #s = randn(1,N)*sqrt(P_s);
         #v = randn(1,N)*sqrt(P_n);
         #y = a*s + v;
-        max_iter: int = 60 + int(numpy.nan_to_num((signaltonoise_dB(data) * -1.0),neginf=-50,posinf=50))
-
+        #-50 at most we want to do is 120 cycles. The least we want to do is ~70
+        #the problem, at the moment, is that this calculation is being done regardless of passband width
+        #which means the narrower the passband the higher the SNR is- fewer states, higher mean
+        #also, this results in MORE noise being injected into the stream, because FABAS doesn't know about
+        #passbands and so doesnt know what it's being fed has a high-pass filter on it.
+        #as a result, number of cycles has to be hardcoded
+        max_iter: int = 100 #+ int(numpy.nan_to_num(signaltonoise_dB(data),neginf=-50,posinf=50)* -1.0)
         # move buffer calculations
         posterior_mean = data
         data_variance ,var5 = variance(data)
@@ -174,7 +183,10 @@ class Filter(object):
             # EVALUATE CHI2
             chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
 
+
             chi2_pdf =  chi2_pdf_call(chi2_data, data.size)
+
+            start = timer()
             chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
             chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
@@ -195,11 +207,12 @@ class Filter(object):
                 converged = True
 
             # COMBINE ITERATION ZERO
-                model_weight = initial_evidence * chi2_data_min
-                bayesian_weight += model_weight
-                bayesian_model += model_weight * data
+        model_weight = initial_evidence * chi2_data_min
+        bayesian_weight += model_weight
+        bayesian_model += model_weight * data
 
-        return bayesian_model / bayesian_weight
+        data = bayesian_model /bayesian_weight
+        return data
 
 class StreamSampler(object):
 
