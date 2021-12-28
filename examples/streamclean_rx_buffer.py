@@ -36,12 +36,12 @@ import numba
 from np_rw_buffer import RingBuffer, AudioFramingBuffer
 
 @numba.jit #((numba.float64[:],numba.float64)(numba.float64[:], numba.float64))
-def variance(data: [float],processing_size: float):
+def variance(data: [float]):
         data = data / 1.0
-        data_alpha_padded = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
-        data_beta = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
-        data_variance_residues = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
-        data_variance  = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
+        #data_alpha_padded = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
+        #data_beta = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
+        #data_variance_residues = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
+        #data_variance  = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
         #numpy.ndarray(buffer=data,dtype=float,shape=[16384])
         data_alpha_padded = numpy.concatenate((numpy.full((1,), (data[0] / 2) + (data[1] / 2)), data, numpy.full((1,), (data[-1] / 2) + (data[-2] / 2))))
         # average the data
@@ -52,10 +52,9 @@ def variance(data: [float],processing_size: float):
         #which is also known as the variance. ugh! numba why u like this
         #data_variance_residues = [abs(x - j) for x, j in zip(data_beta, data)]
         data_variance_residues = numpy.absolute(data_beta - data)
-        #print(data_variance_residues==data_variance_residue2s)
         # we assume beta is larger than residual. after all, few values will be outliers.
         # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
-        variance5 = abs(numpy.var(data_variance_residues))  * 1.61803398875
+        variance5 = abs(numpy.var(data_variance_residues)) * 1.61803398875
 
         data_variance =  data_variance_residues * variance5
         #for some reason sometimes this overflows to NAN, which is a major NONO
@@ -64,8 +63,6 @@ def variance(data: [float],processing_size: float):
 
 @numba.jit ((numba.float64)(numba.float64[:]))
 def signaltonoise_dB(data: [float]):
-        axis= 0#hardcode, we're doing data
-        ddof=1 #because i like it better than 0, its what pandas uses?
         data = data / 1.0
         m = data.mean()
         sd = data.std()
@@ -88,6 +85,20 @@ def Evidence_start(data_variance: [float]):
             2 * numpy.pi * (0 + data_variance))
         return x
 
+@numba.jit ((numba.float64[:])(numba.float64[:]))
+def running_mean(data: [float]):
+    meany = data / 1.0
+    meanx = data / 1.0
+    meanx[:-1] += meany[1:]
+    meanx[1:] += meany[:-1]
+    meanx[1:-1] /= 3
+    meanx[0] /= 2
+    meanx[-1] /= 2
+    return meanx
+
+
+
+
 
 #notes: this particular function call is PRIORITY NUMBER ONE
 # IT TAKES ALL of the time budget for this code, and CANT be accelerated with numba.
@@ -97,11 +108,9 @@ def chi2_pdf_call(data: [float],size):
 
 class Filter(object):
 
-    def __init__(self, processing_size=16384, sample_rate=48000):
-        #self.pa = pyaudio.PyAudio()
-        self._processing_size = processing_size
-        # np_rw_buffer (AudioFramingBuffer offers a delay time)
-        self._sample_rate = sample_rate
+  #  def __init__(self):
+       # self._processing_size = processing_size
+      #  self._sample_rate = sample_rate
 
     def __PSNR(self,recover, signal, L=255):
         MSE = numpy.sum((recover - signal) ** 2) / (recover.size)
@@ -118,8 +127,8 @@ class Filter(object):
 
         # move buffer calculations
         posterior_mean = data
-        data_variance ,var5 = variance(data,self._processing_size)
-        #prevents overflows
+        data_variance ,var5 = variance(data)
+        # prevents overflows
         data_variance = numpy.nan_to_num(var5, copy=False)
 
         posterior_variance = data_variance
@@ -142,13 +151,8 @@ class Filter(object):
             iteration += 1  # Check number of iterations done
 
         # GENERATES PRIORS
-            meanx = posterior_mean.copy()
-            meanx[:-1] += posterior_mean[1:]
-            meanx[1:] += posterior_mean[:-1]
-            meanx[1:-1] /= 3
-            meanx[0] /= 2
-            meanx[-1] /= 2
-            prior_mean = meanx
+
+            prior_mean = running_mean(posterior_mean)
             prior_variance = posterior_variance
 
         # APPLIY BAYES' THEOREM
@@ -161,10 +165,6 @@ class Filter(object):
 
             # EVALUATE CHI2
             chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
-
-            #TODO: this entire function could be made accelerated if numba supported scipy stats.
-            #However, it does not, so it may be that this work will have to be refactored to minimize that call.
-            #ironically, this program spends the most amount of time calling this function: 600ms!
 
             chi2_pdf =  chi2_pdf_call(chi2_data, data.size)
             chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
@@ -221,11 +221,11 @@ class StreamSampler(object):
             pass
         return cls.dtype_to_paformat[dtype.name]
 
-    def __init__(self, processing_size=16384, sample_rate=48000, channels=2, buffer_delay=1.5,
-                 micindex=1, speakerindex=1, dtype=numpy.int16):
+    def __init__(self, processing_size=16384, sample_rate=48000, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
+                 micindex=1, speakerindex=1, dtype=numpy.int32): #int32 works just as fast as int16, maybe adds some precision
         self.pa = pyaudio.PyAudio()
         self._processing_size = processing_size
-        self.filter = Filter(processing_size,sample_rate)
+        self.filter = Filter()
 
         # np_rw_buffer (AudioFramingBuffer offers a delay time)
         self._sample_rate = sample_rate
@@ -374,7 +374,8 @@ class StreamSampler(object):
                               rate=int(self.sample_rate),
                               input=True,
                               input_device_index=self.micindex,  # device_index,
-                              # frames_per_buffer=16384,  # Don't really need this? Default is 1024 I think
+                              #each frame carries twice the data of the frames
+                              frames_per_buffer= int(self._processing_size),  # Don't really need this? Default is 1024 I think
                               stream_callback=self.non_blocking_stream_read,
                               start=False  # Need start to be False if you don't want this to start right away
                               )
@@ -401,15 +402,17 @@ class StreamSampler(object):
                               rate=int(self.sample_rate),
                               output=True,
                               output_device_index=self.speakerindex,
-                              frames_per_buffer=self.processing_size,  # Might need this for the output since you are looking for a specific size.
+                              frames_per_buffer= int(self._processing_size),
                               stream_callback=self.non_blocking_stream_write,
                               start=False  # Need start to be False if you don't want this to start right away
                               )
         return stream
 
     # it is critical that this function do as little as possible, as fast as possible. numpy.ndarray is the fastest we can move.
+    # attention: numpy.ndarray is actually faster than frombuffer for known buffer sizes
+    # memoryview avoids the copy by merely being a view
     def non_blocking_stream_read(self, in_data, frame_count, time_info, status):
-        audio_in = numpy.frombuffer(in_data, dtype=self.dtype).reshape((-1, self.channels))
+        audio_in = memoryview(numpy.ndarray(buffer=memoryview(in_data), dtype=self.dtype, shape=[int(self._processing_size* self._channels)]) .reshape(-1, self.channels))
         self.rb.write(audio_in, error=False)
         return None, pyaudio.paContinue
 
