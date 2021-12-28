@@ -31,42 +31,16 @@ python thepythonfilename.py #assuming the python file is in the current director
 """
 import numpy
 import pyaudio
+import scipy
 import scipy.stats
 import numba
 from np_rw_buffer import RingBuffer, AudioFramingBuffer
-import scipy.signal
+import sys
 from threading import Thread
 import time
 
 
-@numba.jit #((numba.float64[:],numba.float64)(numba.float64[:], numba.float64))
-def variance(data: [float]):
-        data = data / 1.0
-        #data_alpha_padded = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
-        #data_beta = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
-        #data_variance_residues = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
-        #data_variance  = numpy.empty(shape=[processing_size], dtype=float, order='C', like=None)
-        #numpy.ndarray(buffer=data,dtype=float,shape=[16384])
-        data_alpha_padded = numpy.concatenate((numpy.full((1,), (data[0] / 2) + (data[1] / 2)), data, numpy.full((1,), (data[-1] / 2) + (data[-2] / 2))))
-        # average the data
-        data_beta = numpy.asarray([(i + j + k / 3) for i, j, k in
-                               zip(data_alpha_padded, data_alpha_padded[1:], data_alpha_padded[2:])])
-
-        # get the smallest positive average, get the smallest out of the two. conveniently this also returns the distance between the average and the not so average
-        #which is also known as the variance. ugh! numba why u like this
-        #data_variance_residues = [abs(x - j) for x, j in zip(data_beta, data)]
-        data_variance_residues = numpy.absolute(data_beta - data)
-        # we assume beta is larger than residual. after all, few values will be outliers.
-        # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
-        data_variance_residues = numpy.absolute(data_beta - data_variance_residues)
-        variance5 = abs(numpy.var(data_variance_residues)) * 1.61803398875
-
-        data_variance =  data_variance_residues * variance5
-        #for some reason sometimes this overflows to NAN, which is a major NONO
-        #however for numpa to work the Nan processing has to be done elsewhere, thus export variance5 for the bounding
-        return data_variance,variance5
-
-@numba.jit ((numba.float64)(numba.float64[:]))
+#@numba.jit ((numba.float64)(numba.float64[:]))
 def signaltonoise_dB(data: [float]):
         data = data / 1.0
         m = data.mean()
@@ -78,34 +52,34 @@ def signaltonoise_dB(data: [float]):
         xd = abs(xl)
         return 20*numpy.log10(xd)
 
-@numba.jit #((numba.float64[:],numba.float64[:],numba.float64,numba.float64)(numba.float64))
+#@numba.jit #((numba.float64[:],numba.float64[:],numba.float64,numba.float64)(numba.float64))
 def evaluate(prior_mean: [float],data: [float],prior_variance: float,data_variance: float):
         x = numpy.exp(-((prior_mean - data) ** 2) / (2 * (prior_variance + data_variance))) / numpy.sqrt(
             2 * numpy.pi * (prior_variance + data_variance))
         return x
 
-@numba.jit #((numba.float64[:])(numba.float64))
-def Evidence_start(data_variance: [float]):
-    try:
-        x = numpy.exp(-((0 - numpy.sqrt(data_variance)) ** 2) / (2 * (0 + data_variance))) / numpy.sqrt(
-            2 * numpy.pi * (0 + data_variance))
-        return x
-    except:
-        print("divided by zero! value was : ", data_variance)
-        return 1.0
+#evidence = Evidence(0, numpy.sqrt(data_variance), 0, data_variance)
+#Evidence(prior_mean, data, prior_variance, data_variance)
+#@numba.jit #((numba.float64[:])(numba.float64))
+def Evidence(mu1, mu2, var1, var2):
+    return numpy.exp(-((mu1 - mu2) ** 2) / (2 * (var1 + var2))) / numpy.sqrt(
+        2 * numpy.pi * (var1 + var2)
+    )
 
-@numba.jit ((numba.float64[:])(numba.float64[:]))
-def running_mean(data: [float]):
-    meany = data / 1.0
-    meanx = data / 1.0
-    meanx[:-1] += meany[1:]
-    meanx[1:] += meany[:-1]
-    meanx[1:-1] /= 3
-    meanx[0] /= 2
-    meanx[-1] /= 2
-    return meanx
-
-
+#@numba.jit# ((numba.float64[:]) (numba.types.Tuple(numba.float64[:],numba.int16)))
+def running_mean(data: [float],dim: int):
+    data = data/ 1.0
+    mean = data.copy()
+    length = dim
+    if length == 1:
+        mean[:-1] += data[1:]
+        mean[1:] += data[:-1]
+        mean[1:-1] /= 3
+        mean[0] /= 2
+        mean[-1] /= 2
+    else:
+        print("Warning: Size of array not supported in numba!")
+    return mean
 
 
 
@@ -124,103 +98,118 @@ class Filter(object):
        # self._processing_size = processing_size
       #  self._sample_rate = sample_rate
 
-    def __PSNR(self,recover, signal, L=255):
-        MSE = numpy.sum((recover - signal) ** 2) / (recover.size)
-        return 10 * numpy.log10((L) ** 2 / MSE)
+  def fabada(self,
+          data: [float],
+          data_variance: float = 1,
+          max_iter: int = 3000,
+          verbose: bool = False,
+          **kwargs
+  ) -> numpy.array:
 
-    def fabada(self,data: [float]):
-        # fabada expects the data as a floating point array, so, that is what we are going to work with.
-        #define the number of iterations based on the SNR of the sample, where noisier samples need more work.
-        # the most this can be is around 40 to -80, inverted, adds max of 80, subtracts most of 40.
-        #If the SNR is high, fabada doesnt seem to be able to do as much. Perhaps I am wrong.
-        # Get the channels
-        data = data.astype(float)
-        #weiner = scipy.signal.wiener(data)
-        #todo: perhaps do better SNR/variance calculations based on power estimation?
-        #P_s = 1;   % target signal power
-        #SNR = 15;  % target SNR in dB
-        #P_n = P_s / 10^(SNR/10); % calculated noise power
-        #s = randn(1,N)*sqrt(P_s);
-        #v = randn(1,N)*sqrt(P_n);
-        #y = a*s + v;
-        #-50 at most we want to do is 120 cycles. The least we want to do is ~70
-        #the problem, at the moment, is that this calculation is being done regardless of passband width
-        #which means the narrower the passband the higher the SNR is- fewer states, higher mean
-        #also, this results in MORE noise being injected into the stream, because FABAS doesn't know about
-        #passbands and so doesnt know what it's being fed has a high-pass filter on it.
-        #as a result, number of cycles has to be hardcoded
+      """
+          FABADA for any kind of data (1D or 2D). Performs noise reduction in input.
+          :param data: Noisy measurements, either 1 dimension (M) or 2 dimensions (MxN)
+          :param data_variance: Estimated variance of the input, either MxN array, list
+                            or float assuming all point have same variance.
+      :param max_iter: 3000 (default). Maximum of iterations to converge in solution.
+      :param verbose: False (default) or True. Spits some informations about process.
+          :param **kwargs: Future Work.
+      :return bayes: denoised estimation of the data with same size as input.
+      """
+      data = numpy.array(data / 1.0)
 
+      data_variance = numpy.array(data_variance / 1.0)
 
+      if not kwargs:
+          kwargs = {}
+          kwargs["debug"] = False
+      print(data.shape)
+      if verbose:
+          if len(data.shape) == 1:
+              print("FABADA 1-D initialize")
+          elif len(data.shape) == 2:
+              print("FABADA 2-D initialize")
+          else:
+              print("Warning: Size of array not supported")
 
-        max_iter: int = 100 #+ int(numpy.nan_to_num(signaltonoise_dB(data),neginf=-50,posinf=50)* -1.0)
-        # move buffer calculations
-        posterior_mean = data
-        data_variance ,var5 = variance(data)
-        # prevents overflows
-        data_variance = numpy.nan_to_num(var5, copy=False)
+      if data_variance.size != data.size:
+          data_variance = data_variance * numpy.ones_like(data)
 
-        posterior_variance = data_variance
-        evidence = Evidence_start(data_variance)
-        initial_evidence = evidence
-        chi2_pdf, chi2_data, iteration = 0, data.size, 0
-        chi2_pdf_derivative, chi2_data_min = 0, data.size
-        bayesian_weight = 0
-        bayesian_model = 0
+      # INITIALIZING ALGORITMH ITERATION ZERO
+      posterior_mean = data
+      posterior_variance = data_variance
+      evidence = Evidence(0, numpy.sqrt(data_variance), 0, data_variance)
+      initial_evidence = evidence
+      chi2_pdf, chi2_data, iteration = 0, data.size, 0
+      chi2_pdf_derivative, chi2_data_min = 0, data.size
+      bayesian_weight = 0
+      bayesian_model = 0
 
-        converged = False
+      converged = False
 
-        while not converged:
+      try:
+          while not converged:
 
-            chi2_pdf_previous = chi2_pdf
-            chi2_pdf_derivative_previous = chi2_pdf_derivative
-            evidence_previous = numpy.mean(evidence)
+              chi2_pdf_previous = chi2_pdf
+              chi2_pdf_derivative_previous = chi2_pdf_derivative
+              evidence_previous = numpy.mean(evidence)
 
-            iteration += 1  # Check number of iterations done
+              iteration += 1  # Check number of iterartions done
 
-        # GENERATES PRIORS
+              # GENERATES PRIORS
+              prior_mean = running_mean(posterior_mean,data.ndim)
+              prior_variance = posterior_variance
 
-            prior_mean = running_mean(posterior_mean)
-            prior_variance = posterior_variance
+              # APPLIY BAYES' THEOREM
+              posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
+              posterior_mean = (
+                                       prior_mean / prior_variance + data / data_variance
+                               ) * posterior_variance
 
-        # APPLIY BAYES' THEOREM
-            posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
-            posterior_mean = (prior_mean / prior_variance + data / data_variance) * posterior_variance
+              # EVALUATE EVIDENCE
+              evidence = Evidence(prior_mean, data, prior_variance, data_variance)
+              evidence_derivative = numpy.mean(evidence) - evidence_previous
 
-            # EVALUATE EVIDENCE
-            evidence = evaluate(prior_mean,data,prior_variance,data_variance)
-            evidence_derivative = numpy.mean(evidence) - evidence_previous
+              # EVALUATE CHI2
+              chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
+              chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=data.size)
+              chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
+              chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
-            # EVALUATE CHI2
-            chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
+              # COMBINE MODELS FOR THE ESTIMATION
+              model_weight = evidence * chi2_data
+              bayesian_weight += model_weight
+              bayesian_model += model_weight * posterior_mean
 
+              if iteration == 1:
+                  chi2_data_min = chi2_data
 
-            chi2_pdf =  chi2_pdf_call(chi2_data, data.size)
-            chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
-            chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
+              # CHECK CONVERGENCE
+              if (
+                      (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
+                      and (evidence_derivative < 0)
+                      or (iteration > max_iter)
+              ):
+                  converged = True
 
-            # COMBINE MODELS FOR THE ESTIMATION
+                  # COMBINE ITERATION ZERO
+                  model_weight = initial_evidence * chi2_data_min
+                  bayesian_weight += model_weight
+                  bayesian_model += model_weight * data
 
-            model_weight = evidence * chi2_data
-            bayesian_weight += model_weight
-            bayesian_model += model_weight * posterior_mean
+      except:
+          print("Unexpected error:", sys.exc_info()[0])
+          raise
 
-            if iteration == 1:
-                chi2_data_min = chi2_data
-            # CHECK CONVERGENCE
-            if (
-                    (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
-                    and (evidence_derivative < 0)
-                    or (iteration > max_iter)
-            ):
-                converged = True
+      bayes = bayesian_model / bayesian_weight
 
-            # COMBINE ITERATION ZERO
-        model_weight = initial_evidence * chi2_data_min
-        bayesian_weight += model_weight
-        bayesian_model += model_weight * data
+      if verbose:
+          print(
+              "Finish at {} iterations".format(iteration),
+              " and with an execute time of {:3.2f} seconds.".format(time() - t),
+          )
 
-        data = bayesian_model /bayesian_weight
-        return data
+      return bayes
 
 
 ###
