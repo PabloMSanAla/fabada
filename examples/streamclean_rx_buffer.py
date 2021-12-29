@@ -46,10 +46,9 @@ import numba
 from np_rw_buffer import AudioFramingBuffer
 import sys
 from threading import Thread
-from time import time as time1
 import time
 import math
-
+from time import time as timer
 
 @numba.jit ((numba.float64)(numba.float64[:]))
 def signaltonoise_dB(data: [float]):
@@ -63,7 +62,7 @@ def signaltonoise_dB(data: [float]):
         xd = abs(xl)
         return 20*numpy.log10(xd)
 
-@numba.jit #((numba.float64[:],numba.float64[:],numba.float64,numba.float64)(numba.float64))
+@numba.jit (numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]))
 def evaluate(prior_mean: [float],data: [float],prior_variance: float,data_variance: float):
         x = numpy.exp(-((prior_mean - data) ** 2) / (2 * (prior_variance + data_variance))) / numpy.sqrt(
             2 * numpy.pi * (prior_variance + data_variance))
@@ -71,13 +70,23 @@ def evaluate(prior_mean: [float],data: [float],prior_variance: float,data_varian
 
 #evidence = Evidence(0, numpy.sqrt(data_variance), 0, data_variance)
 #Evidence(prior_mean, data, prior_variance, data_variance)
-@numba.jit #((numba.float64[:])(numba.float64))
-def Evidence(mu1, mu2, var1, var2):
+# Todo This function requires ~2000ms to complete on the first round. Why?
+@numba.jit (numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]))
+def Evidence(mu1: [float], mu2: [float], var1: [float], var2: [float]):
     return numpy.exp(-((mu1 - mu2) ** 2) / (2 * (var1 + var2))) / numpy.sqrt(
         2 * numpy.pi * (var1 + var2)
     )
 
-@numba.jit
+#first time this function is called, it's unfortunantly called with 0.0, which is not useful here
+@numba.jit (numba.float64[:](numba.float64,numba.float64[:],numba.float64,numba.float64[:]))
+def Evidence1st(mu1: float, mu2: [float], var1: float, var2: [float]):
+    return numpy.exp(-((mu1 - mu2) ** 2) / (2 * (var1 + var2))) / numpy.sqrt(
+        2 * numpy.pi * (var1 + var2)
+    )
+
+#
+#prespecifying the nuba types fixed this tremendously, it no longer takes 3000 milliseconds the first time it runs
+@numba.jit((numba.float64[:])(numba.float64[:]))
 def meanx1(data: [float]):
     meanx = data / 1.0
     meanx[:-1] += data[1:]
@@ -85,9 +94,24 @@ def meanx1(data: [float]):
     meanx[1:-1] /= 3
     meanx[0] /= 2
     meanx[-1] /= 2
-    return meanx #simple, easy, 1-dimensional function
+    return meanx
+    #simple, easy, 1-dimensional function
 
-@numba.jit
+#this code works but it doesnt work very well.
+#as an example of how to vectorize code, it works very well, but vectorizing this 1d transform doesn't work well.
+#on the other hand, maybe i just wrote it wrong? something to do with the way the data is copied..
+#@numba.guvectorize([(numba.float64[:],numba.float64, numba.float64[:])],'(n),()->(n)')
+#def meanx1(data: [float], blank: float , meanx: [float]):
+ #  meanx = data / 1.0
+  # blank = blank
+   #meanx[:-1] += data [1:]
+   #meanx[1:] += data [:-1]
+   #meanx[1:-1] /= 3
+   #meanx[0] /= 2
+   #meanx[-1] /= 2
+ # return meanx #simple, easy, 1-dimensional function
+
+@numba.jit#((numba.float64[::])(numba.float64[::]))
 def meanx2(data:[float]):
     mean = data / 1.0
     mean[:-1, :] += data[1:, :]
@@ -105,20 +129,21 @@ def meanx2(data:[float]):
     mean[-1, 0] /= 3
     return mean #simple, easy, 2-dimensional function
 
-
+#TODO This function takes 1600 milliseconds on the first pass. Why?
 @numba.jit
-def posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance):
+def posterior_mean_gen(prior_mean: [float],prior_variance: [float],data: [float],data_variance: [float],posterior_variance: [float]):
     return ( prior_mean / prior_variance + data / data_variance ) * posterior_variance
 
 
-#notes: this particular function call takes on average 70ms to 100ms to complete
+#notes: this particular function call takes on average 70ms to 100ms to complete. It cannot be optimized.
 def chi2_pdf_call(data: [float],size):
     #start = timer()
     pdf = scipy.stats.chi2.pdf(data, df=size)
-    #end = timer()
-    #time = (end - start) * 1000000.00  # Time in seconds, e.g. 5.38091952400282
-    #print("chi2.pdf took : ", time, " ms!")
     return pdf
+
+@numba.jit((numba.float64[:])( numba.float64[:]))
+def nan(data: [float]):
+    return numpy.asarray([x if not math.isnan(x) else 0.0 for x in data])
 
 @numba.jit((numba.float64[:])( numba.float64[:]))
 def variance(data: [float]):
@@ -129,7 +154,6 @@ def variance(data: [float]):
     #the only time fabada will work for this particular application is when we get this right.
 
     data1 = data / 1.0 #get a copy of data
-    # data1[data1==0] = -numpy.finfo(numpy.float64).eps
     data_alpha_padded = numpy.concatenate(
         (numpy.full((1,), (data1[0] / 2) + (data1[1] / 2)), data1, numpy.full((1,), (data1[-1] / 2) + (data1[-2] / 2))))
     data_beta = numpy.asarray([(i + j + k / 3) for i, j, k in
@@ -146,25 +170,24 @@ def variance(data: [float]):
     # print(data_mean, variance5)
     data_variance = data_variance * data_mean * 1.61803398875
     #cant use numpy.nan_to_num in numpa, hacky workaround
-    data_variance= numpy.asarray([x if not math.isnan(x) else 0.0 for x in data_variance])
+    data_variance= nan(data_variance)
     # bayes = numpy.asarray([j if x!=0 else x for j,x in zip(bayes,data)])
 
     # data_variance = numpy.asarray([j if x<1 else x for j,x in zip(data_variance,data)])
-    data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
     return data_variance
-
 
 class Filter(object):
 
   #  def __init__(self):
        # self._processing_size = processing_size
       #  self._sample_rate = sample_rate
+     #note: if removing staticmethod, insert self, before data
     @staticmethod
     def fabada(
           data: [float],
           data_variance: float = 1,
           max_iter: int = 200,
-          verbose: bool = True,
+          verbose: bool = False,
           **kwargs
     ) -> numpy.array:
 
@@ -178,15 +201,24 @@ class Filter(object):
         :param **kwargs: Future Work.
         :return bayes: denoised estimation of the data with same size as input.
          """
-        t = time1()
-        data = numpy.array(data / 1.0)
-        data = numpy.nan_to_num(data, posinf=0, neginf=0) #sanitize your data
+        #data = numpy.array(data / 1.0)
+        data = data / 1.0 # 9 milliseconds less than numpy.array, only works if passing a numpy array already
+        #data = numpy.asarray([x if not math.isnan(x) else 0.0 for x in data])
+        #nan_to_num for this dataset is 90 milliseconds. numpy.asarray([x if not math.isnan(x) else 0.0 for x in data]) is 4,226!
+        #however, numba accelerated, it's still faster!
 
-        #if verbose:
-       #     if data.ndim == 1:
-       #         print("FABADA 1-D initialize")
-        #    elif data.ndim == 2:
-         #       print("FABADA 2-D initialize")
+        if verbose:
+            if data.ndim == 1:
+                print("FABADA 1-D initialize")
+            elif data.ndim == 2:
+                print("FABADA 2-D initialize")
+            else:
+                print("Warning: Size of array not supported")
+            t=timer()
+
+
+        data = nan(data) #sanitize your data
+        min = numpy.finfo(numpy.float64).eps
 
         if (data.ndim < 1 or data.ndim >2 ):
             print("number of dimensions not supported~!")
@@ -198,20 +230,8 @@ class Filter(object):
             kwargs = {}
             kwargs["debug"] = False
 
-
-        #if data_variance.size != data.size:
-        #aight lets sanitize!
-        #data = abs(data)
-        # datamax = numpy.amax(data1)
-        # datamin = numpy.amin(data1)
-        #range = abs(datamin - datamax)
-        #difference = abs(data_median - data_mean)
-        #if difference > (range/10):
-        # floor = data_median * numpy.ones_like(data1) #robustified against outliers
-        # else:
-        data1 = data.copy()
-        #data1[data1==0] = -numpy.finfo(numpy.float64).eps
         data_variance = variance(data)
+        data_variance[data_variance == 0] = min
         #initialize bayes for the function return
         bayes = 0.0 * numpy.ones_like(data)
 
@@ -219,7 +239,7 @@ class Filter(object):
         # INITIALIZING ALGORITMH ITERATION ZERO
             posterior_mean = data
             posterior_variance = data_variance
-            evidence = Evidence(0, numpy.sqrt(data_variance), 0, data_variance)
+            evidence = Evidence1st(0.0, numpy.sqrt(data_variance), 0.0, data_variance)
             initial_evidence = evidence
             chi2_pdf, chi2_data, iteration = 0, data.size, 0
             chi2_pdf_derivative, chi2_data_min = 0, data.size
@@ -246,8 +266,6 @@ class Filter(object):
 
         # APPLIY BAYES' THEOREM
         # prevent le' devide by le zeros
-            prior_variance[prior_variance == 0] = numpy.finfo(numpy.float64).eps
-            data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
 
             posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
             posterior_mean = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
@@ -297,8 +315,9 @@ class Filter(object):
 
                 # APPLIY BAYES' THEOREM
                  #prevent le' devide by le zeros
-                prior_variance[prior_variance == 0] = numpy.finfo(numpy.float64).eps
-                data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
+                #prior_variance[prior_variance == 0] = min
+                #data_variance[data_variance == 0] = min
+                #edit: now that we run once, this code isnt needed?
 
                 posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
                 posterior_mean =  posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance)
@@ -324,18 +343,20 @@ class Filter(object):
             bayesian_model += model_weight * data
             bayes = bayesian_model / bayesian_weight
 
-            bayes =  numpy.nan_to_num(bayes,neginf=numpy.finfo(numpy.float64).eps,posinf=numpy.finfo(numpy.float64).eps)
+            bayes =  nan(bayes)
             # don't accidentally insert garbage into our stream
-            #bayes = numpy.asarray([j if x!=0 else x for j,x in zip(bayes,data)])
 
         except:
             print("Unexpected error:", sys.exc_info()[0])
             raise
 
+        #from now on using pyutils/line profiler to profile the code
+
         if verbose:
             print(
-              "Finish at {} iterations".format(iteration),
-              " and with an execute time of ", int(1000 * (time1() - t)), "ms" )
+                "Finish at {} iterations".format(iteration),
+                " and with an execute time of : ", int(1000* (timer() - t)), "ms"
+            )
 
         return bayes #this will either return zeros or the desired data
 
