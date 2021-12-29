@@ -37,7 +37,9 @@ import numba
 from np_rw_buffer import RingBuffer, AudioFramingBuffer
 import sys
 from threading import Thread
+from time import time as time1
 import time
+import math
 
 
 @numba.jit ((numba.float64)(numba.float64[:]))
@@ -66,24 +68,37 @@ def Evidence(mu1, mu2, var1, var2):
         2 * numpy.pi * (var1 + var2)
     )
 
-@numba.jit# ((numba.float64[:]) (numba.types.Tuple(numba.float64[:],numba.int16)))
-def running_mean(data: [float],dim: int):
-    data = data/ 1.0
-    mean = data.copy()
-    length = dim
-    if length == 1:
-        mean[:-1] += data[1:]
-        mean[1:] += data[:-1]
-        mean[1:-1] /= 3
-        mean[0] /= 2
-        mean[-1] /= 2
-    else:
-        print("Warning: Size of array not supported in numba!")
-    return mean
+@numba.jit
+def meanx1(data: [float]):
+    meanx = data / 1.0
+    meanx[:-1] += data[1:]
+    meanx[1:] += data[:-1]
+    meanx[1:-1] /= 3
+    meanx[0] /= 2
+    meanx[-1] /= 2
+    return meanx #simple, easy, 1-dimensional function
+
+@numba.jit
+def meanx2(data:[float]):
+    mean = data / 1.0
+    mean[:-1, :] += data[1:, :]
+    mean[1:, :] += data[:-1, :]
+    mean[:, :-1] += data[:, 1:]
+    mean[:, 1:] += data[:, :-1]
+    mean[1:-1, 1:-1] /= 5
+    mean[0, 1:-1] /= 4
+    mean[-1, 1:-1] /= 4
+    mean[1:-1, 0] /= 4
+    mean[1:-1, -1] /= 4
+    mean[0, 0] /= 3
+    mean[-1, -1] /= 3
+    mean[0, -1] /= 3
+    mean[-1, 0] /= 3
+    return mean #simple, easy, 2-dimensional function
+
 
 @numba.jit
 def posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance):
-
     return ( prior_mean / prior_variance + data / data_variance ) * posterior_variance
 
 
@@ -96,162 +111,229 @@ def chi2_pdf_call(data: [float],size):
     #print("chi2.pdf took : ", time, " ms!")
     return pdf
 
+@numba.jit((numba.float64[:])( numba.float64[:]))
+def variance(data: [float]):
+
+    #note: nothing in this function is set in stone or even good.
+    #the contents of this function determine how fabada sees the need for convolution.
+    #i guess. i dont really know. But this is the source of the clicking, the dropped samples, etc.
+    #the only time fabada will work for this particular application is when we get this right.
+    
+    data1 = data / 1.0 #get a copy of data
+    # data1[data1==0] = -numpy.finfo(numpy.float64).eps
+    data_alpha_padded = numpy.concatenate(
+        (numpy.full((1,), (data1[0] / 2) + (data1[1] / 2)), data1, numpy.full((1,), (data1[-1] / 2) + (data1[-2] / 2))))
+    data_beta = numpy.asarray([(i + j + k / 3) for i, j, k in
+                               zip(data_alpha_padded, data_alpha_padded[1:], data_alpha_padded[2:])])
+
+    data_variance_residues = numpy.absolute(data_beta - data1)
+    datamax = numpy.amax(data1)
+    variance_residues_mean = numpy.mean(data_variance_residues)
+    data_beta_mean = numpy.mean(data_beta)
+    data_mean = (datamax + variance_residues_mean + data_beta_mean) / 3
+    floor = data_mean * numpy.ones_like(data)
+    data_variance = numpy.absolute(floor - data1)
+    # variance5 = data_mean * 1.61803398875
+    # print(data_mean, variance5)
+    data_variance = data_variance * data_mean * 1.61803398875
+    #cant use numpy.nan_to_num in numpa, hacky workaround
+    data_variance= numpy.asarray([x if not math.isnan(x) else 0.0 for x in data_variance])
+    # bayes = numpy.asarray([j if x!=0 else x for j,x in zip(bayes,data)])
+
+    # data_variance = numpy.asarray([j if x<1 else x for j,x in zip(data_variance,data)])
+    data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
+    return data_variance
+
+
 class Filter(object):
 
   #  def __init__(self):
        # self._processing_size = processing_size
       #  self._sample_rate = sample_rate
 
-  def fabada(self,
+    def fabada(self,
           data: [float],
           data_variance: float = 1,
           max_iter: int = 64,
           verbose: bool = False,
           **kwargs
-  ) -> numpy.array:
+    ) -> numpy.array:
 
-      """
-          FABADA for any kind of data (1D or 2D). Performs noise reduction in input.
-          :param data: Noisy measurements, either 1 dimension (M) or 2 dimensions (MxN)
-          :param data_variance: Estimated variance of the input, either MxN array, list
+        """
+        FABADA for any kind of data (1D or 2D). Performs noise reduction in input.
+        :param data: Noisy measurements, either 1 dimension (M) or 2 dimensions (MxN)
+        :param data_variance: Estimated variance of the input, either MxN array, list
                             or float assuming all point have same variance.
-      :param max_iter: 3000 (default). Maximum of iterations to converge in solution.
-      :param verbose: False (default) or True. Spits some informations about process.
-          :param **kwargs: Future Work.
-      :return bayes: denoised estimation of the data with same size as input.
-      """
-      data = numpy.array(data / 1.0)
-      #data_variance = numpy.array(data_variance / 1.0)
+        :param max_iter: 3000 (default). Maximum of iterations to converge in solution.
+        :param verbose: False (default) or True. Spits some informations about process.
+        :param **kwargs: Future Work.
+        :return bayes: denoised estimation of the data with same size as input.
+         """
+        t = time1()
+        data = numpy.array(data / 1.0)
+        data = numpy.nan_to_num(data, posinf=0, neginf=0) #sanitize your data
+        if verbose:
+            if len(data.ndim) == 1:
+                print("FABADA 1-D initialize")
+            elif len(data.ndim) == 2:
+                print("FABADA 2-D initialize")
 
-      if not kwargs:
-          kwargs = {}
-          kwargs["debug"] = False
+        if (data.ndim < 1 or data.ndim >2 ):
+            print("number of dimensions not supported~!")
+            return #remove this logic from a loop that runs 100 times
 
-      if verbose:
-          if len(data.shape) == 1:
-              print("FABADA 1-D initialize")
-          elif len(data.shape) == 2:
-              print("FABADA 2-D initialize")
-          else:
-              print("Warning: Size of array not supported")
+         #data_variance = numpy.array(data_variance / 1.0)
 
-      #if data_variance.size != data.size:
-      #aight lets sanitize!
-      data = numpy.nan_to_num(data, posinf=0, neginf=0)
-      #data = abs(data)
-     # datamax = numpy.amax(data1)
-     # datamin = numpy.amin(data1)
-      #range = abs(datamin - datamax)
-      #difference = abs(data_median - data_mean)
-      #if difference > (range/10):
-         # floor = data_median * numpy.ones_like(data1) #robustified against outliers
-     # else:
-      data1 = data.copy()
-      #data1[data1==0] = -numpy.finfo(numpy.float64).eps
-      data_alpha_padded = numpy.concatenate(
-          (numpy.full((1,), (data1[0] / 2) + (data1[1] / 2)), data1, numpy.full((1,), (data1[-1] / 2) + (data1[-2] / 2))))
-      data_beta = numpy.asarray([(i + j + k / 3) for i, j, k in
-                                 zip(data_alpha_padded, data_alpha_padded[1:], data_alpha_padded[2:])])
+        if not kwargs:
+            kwargs = {}
+            kwargs["debug"] = False
+
+        if verbose:
+            if len(data.shape) == 1:
+                    print("FABADA 1-D initialize")
+            elif len(data.shape) == 2:
+                print("FABADA 2-D initialize")
+            else:
+                print("Warning: Size of array not supported")
+
+        #if data_variance.size != data.size:
+        #aight lets sanitize!
+        #data = abs(data)
+        # datamax = numpy.amax(data1)
+        # datamin = numpy.amin(data1)
+        #range = abs(datamin - datamax)
+        #difference = abs(data_median - data_mean)
+        #if difference > (range/10):
+        # floor = data_median * numpy.ones_like(data1) #robustified against outliers
+        # else:
+        data1 = data.copy()
+        #data1[data1==0] = -numpy.finfo(numpy.float64).eps
+        data_variance = variance(data)
+        #initialize bayes for the function return
+        bayes = 0.0 * numpy.ones_like(data)
+
+        try:
+        # INITIALIZING ALGORITMH ITERATION ZERO
+            posterior_mean = data
+            posterior_variance = data_variance
+            evidence = Evidence(0, numpy.sqrt(data_variance), 0, data_variance)
+            initial_evidence = evidence
+            chi2_pdf, chi2_data, iteration = 0, data.size, 0
+            chi2_pdf_derivative, chi2_data_min = 0, data.size
+            bayesian_weight = 0
+            bayesian_model = 0
+
+            converged = False
+            iteration += 1  # set  number of iterations done
+
+            chi2_pdf_previous = chi2_pdf
+            chi2_pdf_derivative_previous = chi2_pdf_derivative
+            evidence_previous = numpy.mean(evidence)
+
+            iteration += 1  # Check number of iterartions done
+
+         # GENERATES PRIORS
+            if (posterior_mean.ndim == 1):
+                prior_mean = meanx1(posterior_mean)
+            if (posterior_mean.ndim == 2):
+                prior_mean = meanx2(posterior_mean)
+          #if data dimensions are not 1 or 2, it will break further up in the loop.
+            prior_variance = posterior_variance
+
+        # APPLIY BAYES' THEOREM
+        # prevent le' devide by le zeros
+            prior_variance[prior_variance == 0] = numpy.finfo(numpy.float64).eps
+            data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
+
+            posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
+            posterior_mean = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
+
+        # EVALUATE EVIDENCE
+            evidence = Evidence(prior_mean, data, prior_variance, data_variance)
+            evidence_derivative = numpy.mean(evidence) - evidence_previous
+
+         # EVALUATE CHI2
+            chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
+            chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=data.size)
+            chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
+            chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
+
+         # COMBINE MODELS FOR THE ESTIMATION
+            model_weight = evidence * chi2_data
+            bayesian_weight += model_weight
+            bayesian_model += model_weight * posterior_mean
+            chi2_data_min = chi2_data
 
 
-      data_variance_residues = numpy.absolute(data_beta - data1)
-      datamax = numpy.amax(data1)
-      variance_residues_mean = numpy.mean(data_variance_residues)
-      data_beta_mean = numpy.mean(data_beta)
-      data_mean = (datamax + variance_residues_mean + data_beta_mean)/ 3
-      floor = data_mean * numpy.ones_like(data)
-      data_variance = abs(floor - data1)
-      #variance5 = data_mean * 1.61803398875
-      #print(data_mean, variance5)
-      data_variance = data_variance * data_mean
-      data_variance = numpy.nan_to_num(data_variance, neginf=-numpy.finfo(numpy.float64).eps, posinf=numpy.finfo(numpy.float64).eps)
-      #data_variance = numpy.asarray([j if x<1 else x for j,x in zip(data_variance,data)])
+            while not converged:
 
-      data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
-      #if(numpy.amax(data_variance) >
+                if (
+                    (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
+                    and (evidence_derivative < 0)
+                    or (iteration > max_iter)
+                    ):
+                    converged = True
+                    continue #break the loop when we're done by prematurely setting converged and returning
+                    #this allows us to test if one round of convergence is enough.
+                else:
 
+                    chi2_pdf_previous = chi2_pdf
+                    chi2_pdf_derivative_previous = chi2_pdf_derivative
+                    evidence_previous = numpy.mean(evidence)
 
-      # INITIALIZING ALGORITMH ITERATION ZERO
-      posterior_mean = data
-      posterior_variance = data_variance
-      evidence = Evidence(0, numpy.sqrt(data_variance), 0, data_variance)
-      initial_evidence = evidence
-      chi2_pdf, chi2_data, iteration = 0, data.size, 0
-      chi2_pdf_derivative, chi2_data_min = 0, data.size
-      bayesian_weight = 0
-      bayesian_model = 0
+                    iteration += 1  # Check number of iterartions done
 
-      converged = False
+                    # GENERATES PRIORS
+                    if(posterior_mean.ndim ==1):
+                         prior_mean = meanx1(posterior_mean)
+                    if(posterior_mean.ndim == 2):
+                         prior_mean = meanx2(posterior_mean)
+                    prior_variance = posterior_variance
 
-      try:
-          while not converged:
+                    # APPLIY BAYES' THEOREM
+                    #prevent le' devide by le zeros
+                    prior_variance[prior_variance == 0] = numpy.finfo(numpy.float64).eps
+                    data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
 
-              chi2_pdf_previous = chi2_pdf
-              chi2_pdf_derivative_previous = chi2_pdf_derivative
-              evidence_previous = numpy.mean(evidence)
+                    posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
+                    posterior_mean =  posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance)
 
-              iteration += 1  # Check number of iterartions done
+                    # EVALUATE EVIDENCE
+                    evidence = Evidence(prior_mean, data, prior_variance, data_variance)
+                    evidence_derivative = numpy.mean(evidence) - evidence_previous
 
-              # GENERATES PRIORS
-              prior_mean = running_mean(posterior_mean,data.ndim)
-              prior_variance = posterior_variance
+                     # EVALUATE CHI2
+                    chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
+                    chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=data.size)
+                    chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
+                    chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
-              # APPLIY BAYES' THEOREM
-              #prevent le' devide by le zeros
-              prior_variance[prior_variance == 0] = numpy.finfo(numpy.float64).eps
-              data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
-
-              posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
-              posterior_mean =  posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance)
-
-              # EVALUATE EVIDENCE
-              evidence = Evidence(prior_mean, data, prior_variance, data_variance)
-              evidence_derivative = numpy.mean(evidence) - evidence_previous
-
-              # EVALUATE CHI2
-              chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
-              chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=data.size)
-              chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
-              chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
-
-              # COMBINE MODELS FOR THE ESTIMATION
-              model_weight = evidence * chi2_data
-              bayesian_weight += model_weight
-              bayesian_model += model_weight * posterior_mean
-
-              if iteration == 1:
-                  chi2_data_min = chi2_data
-
-              # CHECK CONVERGENCE
-              if (
-                      (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
-                      and (evidence_derivative < 0)
-                      or (iteration > max_iter)
-              ):
-                  converged = True
+                    # COMBINE MODELS FOR THE ESTIMATION
+                    model_weight = evidence * chi2_data
+                    bayesian_weight += model_weight
+                    bayesian_model += model_weight * posterior_mean
 
                   # COMBINE ITERATION ZERO
-                  model_weight = initial_evidence * chi2_data_min
-                  bayesian_weight += model_weight
-                  bayesian_model += model_weight * data
+            model_weight = initial_evidence * chi2_data_min
+            bayesian_weight += model_weight
+            bayesian_model += model_weight * data
+            bayes = bayesian_model / bayesian_weight
 
-      except:
-          print("Unexpected error:", sys.exc_info()[0])
-          raise
+            bayes =  numpy.nan_to_num(bayes,neginf=numpy.finfo(numpy.float64).eps,posinf=numpy.finfo(numpy.float64).eps)
+            # don't accidentally insert garbage into our stream
+            #bayes = numpy.asarray([j if x!=0 else x for j,x in zip(bayes,data)])
 
-      bayes = bayesian_model / bayesian_weight
+        except:
+            print("Unexpected error:", sys.exc_info()[0])
+            raise
 
-      bayes =  numpy.nan_to_num(bayes,neginf=numpy.finfo(numpy.float64).eps,posinf=numpy.finfo(numpy.float64).eps)
-      # don't accidentally insert garbage into our stream
-      #bayes = numpy.asarray([j if x!=0 else x for j,x in zip(bayes,data)])
-
-
-      if verbose:
-          print(
+        if verbose:
+            print(
               "Finish at {} iterations".format(iteration),
-              " and with an execute time of {:3.2f} seconds.".format(time() - t),
-          )
-      return bayes
+              " and with an execute time of {:3.2f} seconds.".format(time1() - t),
+            )
+
+        return bayes #this will either return zeros or the desired data
 
 
 ###
