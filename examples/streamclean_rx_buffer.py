@@ -28,6 +28,15 @@ pipwin install pyaudio #assuming you're on windows
 
 python thepythonfilename.py #assuming the python file is in the current directory
 
+Usage:
+You'll need a line-in device or virtual audio cable you can configure so you can loop the output to input.
+The streaming example included here looks for the windows muxer that configures audio devices- whatever you set 
+in your windows settings for default mic and speaker, respectively, this program will treat as input and output.
+So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
+the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
+https://vb-audio.com/Cable/ is an example of a free audio cable.
+The program expects 48000hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
+
 """
 import numpy
 import pyaudio
