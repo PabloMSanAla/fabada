@@ -105,7 +105,7 @@ class Filter(object):
   def fabada(self,
           data: [float],
           data_variance: float = 1,
-          max_iter: int = 3000,
+          max_iter: int = 64,
           verbose: bool = False,
           **kwargs
   ) -> numpy.array:
@@ -121,8 +121,7 @@ class Filter(object):
       :return bayes: denoised estimation of the data with same size as input.
       """
       data = numpy.array(data / 1.0)
-
-      data_variance = numpy.array(data_variance / 1.0)
+      #data_variance = numpy.array(data_variance / 1.0)
 
       if not kwargs:
           kwargs = {}
@@ -137,26 +136,40 @@ class Filter(object):
               print("Warning: Size of array not supported")
 
       #if data_variance.size != data.size:
-      data_variance = data_variance * numpy.ones_like(data)
       #aight lets sanitize!
-      data = numpy.nan_to_num(data, posinf=1, neginf=1)
-      data[data < 1] = 1
+      data = numpy.nan_to_num(data, posinf=0, neginf=0)
+      #data = abs(data)
+     # datamax = numpy.amax(data1)
+     # datamin = numpy.amin(data1)
+      #range = abs(datamin - datamax)
+      #difference = abs(data_median - data_mean)
+      #if difference > (range/10):
+         # floor = data_median * numpy.ones_like(data1) #robustified against outliers
+     # else:
+      data1 = data.copy()
+      #data1[data1==0] = -numpy.finfo(numpy.float64).eps
+      data_alpha_padded = numpy.concatenate(
+          (numpy.full((1,), (data1[0] / 2) + (data1[1] / 2)), data1, numpy.full((1,), (data1[-1] / 2) + (data1[-2] / 2))))
+      data_beta = numpy.asarray([(i + j + k / 3) for i, j, k in
+                                 zip(data_alpha_padded, data_alpha_padded[1:], data_alpha_padded[2:])])
 
-      data_median = numpy.median(data)
-      data_mean = numpy.mean(data)
-      datamax = numpy.amax(data)
-      datamin = numpy.amin(data)
-      range = abs(datamin - datamax)
-      difference = abs(data_median - data_mean)
-      if difference < (range/10):
-          data_mean = data_median #robustified against outliers
-      data_mean = numpy.mean(data) * numpy.ones_like(data)
 
-      power = numpy.nan_to_num(numpy.square(data),neginf=1,posinf=1)
+      data_variance_residues = numpy.absolute(data_beta - data1)
+      datamax = numpy.amax(data1)
+      variance_residues_mean = numpy.mean(data_variance_residues)
+      data_beta_mean = numpy.mean(data_beta)
+      data_mean = (datamax + variance_residues_mean + data_beta_mean)/ 3
       floor = data_mean * numpy.ones_like(data)
-      data_variance = abs(data_mean - data)
+      data_variance = abs(floor - data1)
+      #variance5 = data_mean * 1.61803398875
+      #print(data_mean, variance5)
+      data_variance = data_variance * data_mean
+      data_variance = numpy.nan_to_num(data_variance, neginf=-numpy.finfo(numpy.float64).eps, posinf=numpy.finfo(numpy.float64).eps)
+      #data_variance = numpy.asarray([j if x<1 else x for j,x in zip(data_variance,data)])
 
-      #print(data_variance)
+      data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
+      #if(numpy.amax(data_variance) >
+
 
       # INITIALIZING ALGORITMH ITERATION ZERO
       posterior_mean = data
@@ -185,8 +198,8 @@ class Filter(object):
 
               # APPLIY BAYES' THEOREM
               #prevent le' devide by le zeros
-              prior_variance[prior_variance == 0] = 0.0000001
-              data_variance[data_variance == 0] = 0.0000001
+              prior_variance[prior_variance == 0] = numpy.finfo(numpy.float64).eps
+              data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
 
               posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
               posterior_mean =  posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance)
@@ -228,12 +241,16 @@ class Filter(object):
 
       bayes = bayesian_model / bayesian_weight
 
+      bayes =  numpy.nan_to_num(bayes,neginf=numpy.finfo(numpy.float64).eps,posinf=numpy.finfo(numpy.float64).eps)
+      # don't accidentally insert garbage into our stream
+      #bayes = numpy.asarray([j if x!=0 else x for j,x in zip(bayes,data)])
+
+
       if verbose:
           print(
               "Finish at {} iterations".format(iteration),
               " and with an execute time of {:3.2f} seconds.".format(time() - t),
           )
-
       return bayes
 
 
