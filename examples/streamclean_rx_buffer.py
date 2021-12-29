@@ -30,7 +30,7 @@ python thepythonfilename.py #assuming the python file is in the current director
 
 Usage:
 You'll need a line-in device or virtual audio cable you can configure so you can loop the output to input.
-The streaming example included here looks for the windows muxer that configures audio devices- whatever you set 
+The streaming example included here looks for the windows muxer that configures audio devices- whatever you set
 in your windows settings for default mic and speaker, respectively, this program will treat as input and output.
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
@@ -43,7 +43,7 @@ import pyaudio
 import scipy
 import scipy.stats
 import numba
-from np_rw_buffer import RingBuffer, AudioFramingBuffer
+from np_rw_buffer import AudioFramingBuffer
 import sys
 from threading import Thread
 from time import time as time1
@@ -127,7 +127,7 @@ def variance(data: [float]):
     #the contents of this function determine how fabada sees the need for convolution.
     #i guess. i dont really know. But this is the source of the clicking, the dropped samples, etc.
     #the only time fabada will work for this particular application is when we get this right.
-    
+
     data1 = data / 1.0 #get a copy of data
     # data1[data1==0] = -numpy.finfo(numpy.float64).eps
     data_alpha_padded = numpy.concatenate(
@@ -159,8 +159,8 @@ class Filter(object):
   #  def __init__(self):
        # self._processing_size = processing_size
       #  self._sample_rate = sample_rate
-
-    def fabada(self,
+    @staticmethod
+    def fabada(
           data: [float],
           data_variance: float = 1,
           max_iter: int = 64,
@@ -246,6 +246,7 @@ class Filter(object):
                 prior_mean = meanx1(posterior_mean)
             if (posterior_mean.ndim == 2):
                 prior_mean = meanx2(posterior_mean)
+
           #if data dimensions are not 1 or 2, it will break further up in the loop.
             prior_variance = posterior_variance
 
