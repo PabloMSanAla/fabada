@@ -226,7 +226,7 @@ class Filter(object):
             bayesian_weight = 0
             bayesian_model = 0
 
-            converged = False
+            #converged = False
             iteration += 1  # set  number of iterations done
 
             chi2_pdf_previous = chi2_pdf
@@ -269,53 +269,54 @@ class Filter(object):
             chi2_data_min = chi2_data
 
 
-            while not converged:
+            while 1:
 
                 if (
                     (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
                     and (evidence_derivative < 0)
                     or (iteration > max_iter)
                     ):
-                    converged = True
-                    continue #break the loop when we're done by prematurely setting converged and returning
+                    #converged = True
+                    break #break the loop when we're done by prematurely setting converged and returning
                     #this allows us to test if one round of convergence is enough.
-                else:
+                #else:# the else here is redundant, as we either do or dont do, continue resets the while
+                #and break terminates. While 1 is the fastest we can operate in this mode
 
-                    chi2_pdf_previous = chi2_pdf
-                    chi2_pdf_derivative_previous = chi2_pdf_derivative
-                    evidence_previous = numpy.mean(evidence)
+                chi2_pdf_previous = chi2_pdf
+                chi2_pdf_derivative_previous = chi2_pdf_derivative
+                evidence_previous = numpy.mean(evidence)
 
-                    iteration += 1  # Check number of iterartions done
+                iteration += 1  # Check number of iterartions done
 
                     # GENERATES PRIORS
-                    if(posterior_mean.ndim ==1):
-                         prior_mean = meanx1(posterior_mean)
-                    if(posterior_mean.ndim == 2):
-                         prior_mean = meanx2(posterior_mean)
-                    prior_variance = posterior_variance
+                if(posterior_mean.ndim ==1):
+                     prior_mean = meanx1(posterior_mean)
+                if(posterior_mean.ndim == 2):
+                     prior_mean = meanx2(posterior_mean)
+                prior_variance = posterior_variance
 
-                    # APPLIY BAYES' THEOREM
-                    #prevent le' devide by le zeros
-                    prior_variance[prior_variance == 0] = numpy.finfo(numpy.float64).eps
-                    data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
+                # APPLIY BAYES' THEOREM
+                 #prevent le' devide by le zeros
+                prior_variance[prior_variance == 0] = numpy.finfo(numpy.float64).eps
+                data_variance[data_variance == 0] = numpy.finfo(numpy.float64).eps
 
-                    posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
-                    posterior_mean =  posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance)
+                posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
+                posterior_mean =  posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance)
 
                     # EVALUATE EVIDENCE
-                    evidence = Evidence(prior_mean, data, prior_variance, data_variance)
-                    evidence_derivative = numpy.mean(evidence) - evidence_previous
+                evidence = Evidence(prior_mean, data, prior_variance, data_variance)
+                evidence_derivative = numpy.mean(evidence) - evidence_previous
 
                      # EVALUATE CHI2
-                    chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
-                    chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=data.size)
-                    chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
-                    chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
+                chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
+                chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=data.size)
+                chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
+                chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
                     # COMBINE MODELS FOR THE ESTIMATION
-                    model_weight = evidence * chi2_data
-                    bayesian_weight += model_weight
-                    bayesian_model += model_weight * posterior_mean
+                model_weight = evidence * chi2_data
+                bayesian_weight += model_weight
+                bayesian_model += model_weight * posterior_mean
 
                   # COMBINE ITERATION ZERO
             model_weight = initial_evidence * chi2_data_min
