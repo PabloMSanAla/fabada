@@ -163,8 +163,8 @@ class Filter(object):
     def fabada(
           data: [float],
           data_variance: float = 1,
-          max_iter: int = 64,
-          verbose: bool = False,
+          max_iter: int = 200,
+          verbose: bool = True,
           **kwargs
     ) -> numpy.array:
 
@@ -181,11 +181,12 @@ class Filter(object):
         t = time1()
         data = numpy.array(data / 1.0)
         data = numpy.nan_to_num(data, posinf=0, neginf=0) #sanitize your data
-        if verbose:
-            if len(data.ndim) == 1:
-                print("FABADA 1-D initialize")
-            elif len(data.ndim) == 2:
-                print("FABADA 2-D initialize")
+
+        #if verbose:
+       #     if data.ndim == 1:
+       #         print("FABADA 1-D initialize")
+        #    elif data.ndim == 2:
+         #       print("FABADA 2-D initialize")
 
         if (data.ndim < 1 or data.ndim >2 ):
             print("number of dimensions not supported~!")
@@ -197,13 +198,6 @@ class Filter(object):
             kwargs = {}
             kwargs["debug"] = False
 
-        if verbose:
-            if len(data.shape) == 1:
-                    print("FABADA 1-D initialize")
-            elif len(data.shape) == 2:
-                print("FABADA 2-D initialize")
-            else:
-                print("Warning: Size of array not supported")
 
         #if data_variance.size != data.size:
         #aight lets sanitize!
@@ -340,8 +334,7 @@ class Filter(object):
         if verbose:
             print(
               "Finish at {} iterations".format(iteration),
-              " and with an execute time of {:3.2f} seconds.".format(time1() - t),
-            )
+              " and with an execute time of ", int(1000 * (time1() - t)), "ms" )
 
         return bayes #this will either return zeros or the desired data
 
