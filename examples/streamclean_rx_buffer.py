@@ -45,6 +45,8 @@ from np_rw_buffer import AudioFramingBuffer
 from threading import Thread
 import math
 import time
+import matplotlib.pyplot as plt
+
 
 @numba.jit ((numba.float64)(numba.float64[:]))
 def signaltonoise_dB(data: [float]):
@@ -130,26 +132,21 @@ def meanx2(data:[float]):
 def posterior_mean_gen(prior_mean: [float],prior_variance: [float],data: [float],data_variance: [float],posterior_variance: [float]):
     return ( prior_mean / prior_variance + data / data_variance ) * posterior_variance
 
+@numba.jit(numba.float64(numba.float64,numba.int32))
+def chi2_pdf_call(x: float ,df: int):
 
-#notes: by eliminating scipy, we make it much faster. Ordinarily, this takes up 80ms of 80ms per cycle of fabada.
-@numba.jit(numba.float64(numba.float64,numba.int16))
-def chi2_pdf_call(data: float ,size: int):
+    gammar = (2. * math.lgamma(df / 2.))
+    gammaz = (df / 2. - 1.)
+    gamman = (x / 2)
+    gammas = (numpy.sign(gamman) * ((numpy.abs(gamman)) ** gammaz))
+    gammaq =  numpy.exp(-x / 2)
+    gammaa =  1. / gammar
 
-    if not data == 0:
-        pdf = numpy.exp((numpy.log(2) - .5 * numpy.log(2) * size - math.lgamma(.5 * size)) + data * (numpy.log(size - 1.)) - .5 * data ** 2)
-        return pdf
-    else:
-        pdf = numpy.exp((numpy.log(2) - .5*numpy.log(2)*size - math.lgamma(.5*size)) + data - .5*data**2)
-        return pdf
-   # else:
-        #print("error! this function not optimized for this!")
-
-
-    #else:
-     #   j = numpy.asarray([(j * numpy.log(size - 1.)) if j != 0 else x for j, x in zip(data, numpy.zeros_like(data))], dtype=numpy.float32)
-     #   pdf = numpy.exp((numpy.log(2) - .5 * numpy.log(2) * size - math.lgamma(.5 * size)) + j - .5 * data ** 2)
-     #   print(pdf)
-      #  return pdf
+    pdf = gammaa * gammas * gammaq
+    return pdf
+    #this is the correct, optimized chi2_pdf function call. There is nothing wrong in this code.
+    #This code returns the exact equivalent of calling scipy.stats.chi2.pdf(x,df)
+    #but, where scipy code can't be optimized with numba, this can.
     #xlogy     -- Compute ``x*log(y)`` so that the result is 0 if ``x = 0``. https://github.com/scipy/scipy/blob/master/scipy/special/_xlogy.pxd
     #gammaln      -- Logarithm of the absolute value of the Gamma function for real inputs. same thing as math.lgamma. https://github.com/scipy/scipy/blob/701ffcc8a6f04509d115aac5e5681c538b5265a2/scipy/special/cephes/gamma.c
 
@@ -179,69 +176,51 @@ def variance(data: [float]):
     data_max = abs(numpy.median(data)**2)
     # The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
     data_variance = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data)])
-    data_variance = data_variance + 2048 # bring le floor up, gotta do this for the high frequency noise
-    data_variance = (data_variance ** 4) 
-
-    #data_variance =  numpy.where(data_variance <1 ,data_variance + 1 ,data_variance)#data_variance[data_variance< 64]  = 64.0
-   # data_variance = numpy.where(data_variance<data_max,data_max * (2.71828 ** 4),data_variance)
-
-   # data_variance_padded = numpy.concatenate((numpy.full((1,), (data_variance[0] / 2) + (data_variance[1] / 2)), data_variance,  numpy.full((1,), (data_variance[-1] / 2) + (data_variance[-2] / 2))))
-   # data_variance = numpy.asarray([(i + j + k / 3) for i, j, k in  zip(data_variance_padded, data_variance_padded[1:], data_variance_padded[2:])])
-
-
-
-    # bayes = numpy.asarray([j if x!=0 else x for j,x in zip(bayes,data)])
-
-    # data_variance = numpy.asarray([j if x<1 else x for j,x in zip(data_variance,data)])
+    data_variance = data_variance + 4096 # bring le floor up, gotta do this for the high frequency noise
+    data_variance = (data_variance * 2)
     return data_variance
 
-#@numba.jit(numba.float64[:](numba.float64[:])) #only saves a FEW ms in this function for some reason. adds 40mb of ram use
-def fabada(data: [float]): #-> numpy.array:
-    max_iter: int = 256#more than this and the computer starts to complain
-    verbose: bool = False
-    # 9 milliseconds less than numpy.array, only works if passing a numpy array already
-        #data = numpy.asarray([x if not math.isnan(x) else 0.0 for x in data])
-        #nan_to_num for this dataset is 90 milliseconds. numpy.asarray([x if not math.isnan(x) else 0.0 for x in data]) is 4,226!
-        #however, numba accelerated, it's still faster!
-        #using pyutils line profiler, i have optimized everything. We now do it in as little time as possible.
-        # the only way to move faster is for chi2.pdf to be faster
-    if verbose:
-        if data.ndim == 1:
-            print("FABADA 1-D initialize")
-        elif data.ndim == 2:
-            print("FABADA 2-D initialize")
-        else:
-            print("Warning: Size of array not supported")
-        #numpy.seterr(all='raise')
-    data = data / 1.0
-    #data = data[math.isnan(data)] = 0.0
-    min = 2.22044604925e-16
 
-    #if (data.ndim < 1 or data.ndim >2 ):
-     #   print("number of dimensions not supported~!")
-      #  return numpy.zeros_like(data)#remove this logic from a loop that runs 100 times
+class Filter(object):
 
-        #data_variance = numpy.array(data_variance / 1.0)
+    #@numba.jit((numba.float64[:])(numba.float64[:]))
+    #attempting to accelerate this code with numba actually makes it slower for some reason
+    @staticmethod
+    def numba_fabada(data: [float]):
+        bayesian_weight = numpy.zeros_like(data)
+        bayesian_model = numpy.zeros_like(data)
+        max_iter: int = 100  # more than this and the computer starts to complain?
+        #todo: optimize number of cycles
+        # Must strip all non-essential components from this function to make it work as fast as possible
+        #numba doesn't like unions, arbitrary logic, so for fabada to work on 2x the parent thread needs to call
+        #a different function, and internally a different means and variance calculation function.
+        #This work is beyond the scope of this author
 
-    data_variance = variance(data)
-    data_variance[data_variance == 0] = min
-    #initialize bayes for the function return
-    bayes = 0.0 * numpy.ones_like(data)
+        data = data / 1.0
+        # data = data[math.isnan(data)] = 0.0
+        #min = 2.22044604925e-16
+        numpy.seterr(all="raise")
+        # if (data.ndim < 1 or data.ndim >2 ):
+        #   print("number of dimensions not supported~!")
+        #  return numpy.zeros_like(data)#remove this logic from a loop that runs 100 times
 
-    try:
+        # data_variance = numpy.array(data_variance / 1.0)
+
+        data_variance = variance(data)
+        # initialize bayes for the function return
+
         # INITIALIZING ALGORITMH ITERATION ZERO
 
         posterior_mean = data
         posterior_variance = data_variance
 
-
         evidence = Evidence1st(0.0, numpy.sqrt(data_variance), 0.0, data_variance)
         initial_evidence = evidence
-        chi2_pdf, chi2_data, iteration = 0, data.size, 0
-        chi2_pdf_derivative, chi2_data_min = 0, data.size
-        bayesian_weight = numpy.zeros_like(data)
-        bayesian_model =  numpy.zeros_like(data)
-        #converged = False
+        iteration = 0
+        chi2_pdf = 0.0
+        chi2_pdf_derivative = 0.0
+
+        # converged = False
         iteration += 1  # set  number of iterations done
 
         chi2_pdf_previous = chi2_pdf
@@ -251,49 +230,48 @@ def fabada(data: [float]): #-> numpy.array:
         iteration += 1  # Check number of iterartions done
 
         # GENERATES PRIORS
-       # if (posterior_mean.ndim == 1):
-        prior_mean = meanx1(posterior_mean)
-        #if (posterior_mean.ndim == 2):
-           # prior_mean = meanx2(posterior_mean)
 
-        #if data dimensions are not 1 or 2, it will break further up in the loop.
+        prior_mean = meanx1(posterior_mean)
+
         prior_variance = posterior_variance
 
         # APPLIY BAYES' THEOREM
 
-        posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
+        posterior_variance = numpy.divide(1, numpy.add(numpy.divide(1,prior_variance),numpy.divide(1,data_variance)))
         posterior_mean = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
-
         # EVALUATE EVIDENCE
         evidence = Evidence(prior_mean, data, prior_variance, data_variance)
         evidence_derivative = numpy.mean(evidence) - evidence_previous
 
         # EVALUATE CHI2
-        chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
+        #numpy does not allow fractional powers of negative numbers!
+        x = numpy.subtract(data, posterior_mean)
+        y = numpy.divide(2, data_variance)
+        chi2_data = numpy.sum((numpy.sign(x) * ((numpy.abs(x)) ** y)))
         chi2_pdf = chi2_pdf_call(chi2_data, data.size)
         chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
         chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
         # COMBINE MODELS FOR THE ESTIMATION
+        model_weight = numpy.multiply(evidence, chi2_data)
+        bayesian_weight = numpy.add(bayesian_weight, model_weight)
+        bayesian_model = numpy.add(bayesian_model, numpy.multiply(model_weight, posterior_mean))
 
-        model_weight = evidence * chi2_data
-        bayesian_weight += model_weight
-        bayesian_model += model_weight * posterior_mean
         chi2_data_min = chi2_data
 
         while 1:
 
             if (
                     (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
-                     or(evidence_derivative < 0)
-                     or(iteration > max_iter)
-                     #this isnt the way the algo is meant to work but its not acting consistent so for now
+                    or (evidence_derivative < 0)
+                    or (iteration > max_iter)
+                    # this isnt the way the algo is meant to work but its not acting consistent so for now
             ):
-                #converged = True
-                break #break the loop when we're done by prematurely setting converged and returning
-                #this allows us to test if one round of convergence is enough.
-            #else:# the else here is redundant, as we either do or dont do, continue resets the while
-            #and break terminates. While 1 is the fastest we can operate in this mode
+                # converged = True
+                break  # break the loop when we're done by prematurely setting converged and returning
+                # this allows us to test if one round of convergence is enough.
+            # else:# the else here is redundant, as we either do or dont do, continue resets the while
+            # and break terminates. While 1 is the fastest we can operate in this mode
 
             chi2_pdf_previous = chi2_pdf
             chi2_pdf_derivative_previous = chi2_pdf_derivative
@@ -302,52 +280,53 @@ def fabada(data: [float]): #-> numpy.array:
             iteration += 1  # Check number of iterartions done
 
             # GENERATES PRIORS
-            if(posterior_mean.ndim ==1):
+            if (posterior_mean.ndim == 1):
                 prior_mean = meanx1(posterior_mean)
-            #if(posterior_mean.ndim == 2):
+            # if(posterior_mean.ndim == 2):
             #    prior_mean = meanx2(posterior_mean)
             prior_variance = posterior_variance
 
             # APPLIY BAYES' THEOREM
-            #prevent le' devide by le zeros
+            # prevent le' devide by le zeros
 
-            posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
-            posterior_mean =  posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance)
+            posterior_variance = numpy.divide(1, numpy.add(numpy.divide(1, prior_variance),numpy.divide(1, data_variance)))
+            posterior_mean = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
 
             # EVALUATE EVIDENCE
             evidence = Evidence(prior_mean, data, prior_variance, data_variance)
             evidence_derivative = numpy.mean(evidence) - evidence_previous
 
             # EVALUATE CHI2
-            chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
+            x = numpy.subtract(data, posterior_mean)
+            y = numpy.divide(2, data_variance)
+
+            chi2_data = numpy.sum((numpy.sign(x) * ((numpy.abs(x)) ** y)))
             chi2_pdf = chi2_pdf_call(chi2_data, data.size)
             chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
             chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
             # COMBINE MODELS FOR THE ESTIMATION
-            model_weight = evidence * chi2_data
-            bayesian_weight += model_weight
-            bayesian_model += model_weight * posterior_mean
+            model_weight = numpy.multiply(evidence,chi2_data)
+            bayesian_weight = numpy.add(bayesian_weight, model_weight)
+            bayesian_model = numpy.add(bayesian_model, numpy.multiply(model_weight,posterior_mean))
 
             # COMBINE ITERATION ZERO
-        model_weight = initial_evidence * chi2_data_min
-        bayesian_weight += model_weight
-        bayesian_model += model_weight * data
+        model_weight = numpy.multiply(initial_evidence, chi2_data_min)
+        bayesian_weight = numpy.add(model_weight,bayesian_weight)
+        bayesian_model = numpy.add(bayesian_model, numpy.multiply(model_weight, data))
+
+        bayes = numpy.divide(bayesian_model,bayesian_weight)
+
+        return bayes  # this will either return zeros or the desired data
 
 
-        bayes = bayesian_model / bayesian_weight
-    finally:
-
-        if verbose:
-            print("Finish at ", int(iteration),"iterations")
-
-        return bayes #this will either return zeros or the desired data
 
 
 
 class FilterRun(Thread):
     def __init__(self,rb,pb,channels,processing_size,dtype):
         super(FilterRun, self).__init__()
+        self.filter = Filter()
         self.running = True
         self.rb = rb
         self.processedrb = pb
@@ -360,8 +339,11 @@ class FilterRun(Thread):
     def write_filtered_data(self):
         audio = self.rb.read(self.processing_size).astype(numpy.float64)
         for i in range(self.channels):
-            filtered = fabada(audio[:, i])
+            t= time.time()
+            filtered = self.filter.numba_fabada(audio[:, i])
             self.buffer[:, i] = filtered
+            x = time.time()
+            print((x - t) * 1000)
         self.processedrb.write(self.buffer,error=True)
 
     def run(self):
@@ -377,6 +359,21 @@ class FilterRun(Thread):
         self.running = False
 
 
+
+    #24576 = 0.512s
+    #48 frames = 1ms.
+    #we now know the click happens between each frame on the edges of the frames. Why?
+    #
+    #todo: process the audio as 2/3 chunks, and overlap it with 2/3 chunks offset by 1/3, then average them.
+    #This will let me overlap fabada's processing and smooth it out over time.
+    #
+    #Todo: we sample 48000 samples, lol, so a simple FFT could? in theory? act as a filter and chop our data.
+    #Otherwise i'll have to import scipy again and copy a bit off https://github.com/twoz/pyEQ
+    #Then, once I have it frequency interpolated, I can look at the difference between ground floor and audio.
+    #ie,if its possible to iterate over the array and "guess" where the passband from the SDR ends, I can then slice this
+    #and send the slice to fabada, then reverse-FFT integrate it back into the stream. This will make fabada and variation computes work better
+    #What's more, this may solve the current dillemma with the clicking, by eliminating high frequency inputs and outputs.
+    #
 
 
 class StreamSampler(object):
@@ -406,19 +403,6 @@ class StreamSampler(object):
         except (AttributeError, Exception):
             pass
         return cls.dtype_to_paformat[dtype.name]
-
-    # From mozilla:
-
-    # ''Stereo audio is probably the most commonly used channel arrangement in web audio, and 16-bit samples are used for the majority of day-to-day audio in use today.
-    # For 16-bit stereo audio, each sample taken from the analog signal is recorded as two 16-bit integers, one for the left channel and one for the right.
-    # That means each sample requires 32 bits of memory.
-    # At the common sample rate of 48 kHz (48,000 samples per second), this means each second of audio occupies 192 kB of memory. ''
-
-    #processingsize determination
-    #24576 = 0.512s
-    #48 frames = 1ms.
-    #we now know the click happens between each frame on the edges of the frames. Why?
-
 
 
     def __init__(self, processing_size=48000, sample_rate=48000, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
@@ -671,5 +655,6 @@ if __name__ == "__main__":
         inp = input('Press enter to quit!\n')   # Halt until user input
         SS.filterthread.stop()
         SS.stop()
+        break
 
     #SS.stop()
