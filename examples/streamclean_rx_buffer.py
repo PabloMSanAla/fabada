@@ -170,14 +170,12 @@ def variance(data: [float]):
     #i guess. i dont really know. But this is the source of the clicking, the dropped samples, etc.
     #the only time fabada will work for this particular application is when we get this right.
 
-
-    # a bit like a weiner filter, this is a averaging filter that helps find the smooth mean
     data_mean = abs(numpy.median(data))* numpy.ones_like(data)  # get the mean
     data_max = abs(numpy.median(data)**2)
     # The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
     data_variance = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data)])
     data_variance = data_variance + 4096 # bring le floor up, gotta do this for the high frequency noise
-    data_variance = (data_variance * data_variance)  #exponentiate
+    data_variance = (data_variance * data_variance) #exponentiate
     return data_variance
 
 @numba.jit((numba.float64)( numba.float64[:],numba.float64[:],numba.float64[:]))
@@ -261,7 +259,7 @@ class Filter(object):
         while 1:
 
             if (
-                    (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
+                    (chi2_data > (data.size) and chi2_pdf_snd_derivative >= 0)
                     or (evidence_derivative < 0)
                     or (iteration > max_iter)
                     # this isnt the way the algo is meant to work but its not acting consistent so for now
@@ -410,12 +408,12 @@ class StreamSampler(object):
         self._channels = channels
         # self.rb = RingBuffer((int(sample_rate) * 5, channels), dtype=numpy.dtype(dtype))
         self.rb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
-                                     seconds=4,  # Buffer size (need larger than processing size)[seconds * sample_rate]
+                                     seconds=2,  # Buffer size (need larger than processing size)[seconds * sample_rate]
                                      buffer_delay=0,  # #this buffer doesnt need to have a size
                                      dtype=numpy.dtype(dtype))
 
         self.processedrb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
-                                     seconds=4,  # Buffer size (need larger than processing size)[seconds * sample_rate]
+                                     seconds=2,  # Buffer size (need larger than processing size)[seconds * sample_rate]
                                      buffer_delay=0, # as long as fabada completes in O(n) of less than the sample size in time
                                      dtype=numpy.dtype(dtype))
 
