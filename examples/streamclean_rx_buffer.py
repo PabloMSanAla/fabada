@@ -70,7 +70,7 @@ def evaluate(prior_mean: [float],data: [float],prior_variance: float,data_varian
 
 #evidence = Evidence(0, numpy.sqrt(data_variance), 0, data_variance)
 #Evidence(prior_mean, data, prior_variance, data_variance)
-# Todo This function requires ~2000ms to complete on the first round. Why?
+#properly specifying numba signature fixes this
 @numba.jit (numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]))
 def Evidence(mu1: [float], mu2: [float], var1: [float], var2: [float]):
     return numpy.exp(-((mu1 - mu2) ** 2) / (2 * (var1 + var2))) / numpy.sqrt(
@@ -215,7 +215,7 @@ class Filter(object):
         :return bayes: denoised estimation of the data with same size as input.
          """
         #data = numpy.array(data / 1.0)
-        data = data / 1.0 # 9 milliseconds less than numpy.array, only works if passing a numpy array already
+        data = data.astype(dtype=numpy.float64) # 9 milliseconds less than numpy.array, only works if passing a numpy array already
         #data = numpy.asarray([x if not math.isnan(x) else 0.0 for x in data])
         #nan_to_num for this dataset is 90 milliseconds. numpy.asarray([x if not math.isnan(x) else 0.0 for x in data]) is 4,226!
         #however, numba accelerated, it's still faster!
@@ -397,6 +397,7 @@ class FilterRun(Thread):
     def write_filtered_data(self):
         audio = self.rb.read(self.processing_size)
         for i in range(self.channels):
+            print(audio[:, i])
             filtered = self.filter.fabada(audio[:, i])
             self.buffer[:, i] = filtered
         self.processedrb.write(self.buffer,error=False)
@@ -466,7 +467,7 @@ class StreamSampler(object):
 
 
     def __init__(self, processing_size=6144, sample_rate=48000, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
-                 micindex=1, speakerindex=1, dtype=numpy.int16):
+                 micindex=1, speakerindex=1, dtype=numpy.float32):
         self.pa = pyaudio.PyAudio()
         self._processing_size = processing_size
         self.filter = Filter()
@@ -630,7 +631,7 @@ class StreamSampler(object):
                               input=True,
                               input_device_index=self.micindex,  # device_index,
                               #each frame carries twice the data of the frames
-                              frames_per_buffer= int(self._processing_size),  # Don't really need this? Default is 1024 I think
+                              frames_per_buffer= int(self._processing_size),  
                               stream_callback=self.non_blocking_stream_read,
                               start=False  # Need start to be False if you don't want this to start right away
                               )
