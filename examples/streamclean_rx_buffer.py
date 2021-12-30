@@ -132,11 +132,11 @@ def meanx2(data:[float]):
 def posterior_mean_gen(prior_mean: [float],prior_variance: [float],data: [float],data_variance: [float],posterior_variance: [float]):
     return ( prior_mean / prior_variance + data / data_variance ) * posterior_variance
 
-@numba.jit(numba.float64(numba.float64,numba.int32))
-def chi2_pdf_call(x: float ,df: int):
-
+@numba.jit(numba.float64[:](numba.float64[:],numba.int32))
+def chi2_pdf_call(x: [float] ,df: int):
+    ## chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
     gammar = (2. * math.lgamma(df / 2.))
-    gammaz = (df / 2. - 1.)
+    gammaz = ((df / 2.) - 1.)
     gamman = (x / 2)
     gammas = (numpy.sign(gamman) * ((numpy.abs(gamman)) ** gammaz))
     gammaq =  numpy.exp(-x / 2)
@@ -147,6 +147,7 @@ def chi2_pdf_call(x: float ,df: int):
     #this is the correct, optimized chi2_pdf function call. There is nothing wrong in this code.
     #This code returns the exact equivalent of calling scipy.stats.chi2.pdf(x,df)
     #but, where scipy code can't be optimized with numba, this can.
+    #however, it doesnt do you any good if you're trying to raise 22.9999 to the 47,999 power
     #xlogy     -- Compute ``x*log(y)`` so that the result is 0 if ``x = 0``. https://github.com/scipy/scipy/blob/master/scipy/special/_xlogy.pxd
     #gammaln      -- Logarithm of the absolute value of the Gamma function for real inputs. same thing as math.lgamma. https://github.com/scipy/scipy/blob/701ffcc8a6f04509d115aac5e5681c538b5265a2/scipy/special/cephes/gamma.c
 
@@ -178,18 +179,20 @@ def variance(data: [float]):
     data_variance = (data_variance * data_variance) #exponentiate
     return data_variance
 
-@numba.jit((numba.float64)( numba.float64[:],numba.float64[:],numba.float64[:]))
+@numba.jit((numba.float64[:])( numba.float64[:],numba.float64[:],numba.float64[:]))
 def power(data: [float],posterior_mean: [float],data_variance: [float]):
     x = numpy.subtract(data, posterior_mean)
-    return numpy.sum((numpy.sign(x) * (numpy.abs(x) ** numpy.divide(2, data_variance))))
+    experiment = 2.0 * numpy.ones_like(data)
+    z =  numpy.power(numpy.abs(x) , numpy.divide(experiment, data_variance))
+    return z
 
 class Filter(object):
 
     #attempting to accelerate this code with numba and staticmethod actually makes it slower for some reason
-    def numba_fabada(self,data: [float]):
+    def numba_fabada(self,data: [float],previous_var: [float], has_run: bool = False):
         bayesian_weight = numpy.zeros_like(data)
         bayesian_model = numpy.zeros_like(data)
-        max_iter: int = 100  # more than this and the computer starts to complain?
+        max_iter: int = 64  # more than this and the computer starts to complain?
         #todo: optimize number of cycles
         # Must strip all non-essential components from this function to make it work as fast as possible
         #numba doesn't like unions, arbitrary logic, so for fabada to work on 2x the parent thread needs to call
@@ -205,6 +208,17 @@ class Filter(object):
         # data_variance = numpy.array(data_variance / 1.0)
 
         data_variance = variance(data)
+
+
+    #our per sample variance is inconsistent. Let's fix this.
+        if(has_run == False):
+            variance_return = data_variance
+
+        # take the past, make it impact the future.
+        if(has_run == True):
+            variance_return = (data_variance + data_variance + previous_var)/3
+            data_variance = variance_return 
+
         # initialize bayes for the function return
 
         # INITIALIZING ALGORITMH ITERATION ZERO
@@ -249,6 +263,7 @@ class Filter(object):
         chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
         chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
+
         # COMBINE MODELS FOR THE ESTIMATION
         model_weight = numpy.multiply(evidence, chi2_data)
         bayesian_weight = numpy.add(bayesian_weight, model_weight)
@@ -259,12 +274,11 @@ class Filter(object):
         while 1:
 
             if (
-                    (chi2_data > (data.size) and chi2_pdf_snd_derivative >= 0)
+                    (numpy.abs(numpy.sum(chi2_data)) > (data.size) and numpy.sum(chi2_pdf_snd_derivative) >= 0)
                     or (evidence_derivative < 0)
                     or (iteration > max_iter)
-                    # this isnt the way the algo is meant to work but its not acting consistent so for now
+
             ):
-                # converged = True
                 break  # break the loop when we're done by prematurely setting converged and returning
                 # this allows us to test if one round of convergence is enough.
             # else:# the else here is redundant, as we either do or dont do, continue resets the while
@@ -277,8 +291,7 @@ class Filter(object):
             iteration += 1  # Check number of iterartions done
 
             # GENERATES PRIORS
-            if (posterior_mean.ndim == 1):
-                prior_mean = meanx1(posterior_mean)
+            prior_mean = meanx1(posterior_mean)
             # if(posterior_mean.ndim == 2):
             #    prior_mean = meanx2(posterior_mean)
             prior_variance = posterior_variance
@@ -312,7 +325,7 @@ class Filter(object):
 
         bayes = numpy.divide(bayesian_model,bayesian_weight)
 
-        return bayes  # this will either return zeros or the desired data
+        return bayes, variance_return  # this will either return zeros or the desired data
 
 
 
@@ -330,14 +343,26 @@ class FilterRun(Thread):
         self.dtype = dtype
         self.buffer = numpy.ndarray(dtype=self.dtype, shape=[int(self.processing_size * self.channels)])
         self.buffer = self.buffer.reshape(-1,self.channels)
+        self.hasrun = False
+        self.variancebuffer = numpy.zeros_like(self.buffer)
+        self.zeros = numpy.zeros_like(self.buffer)
 
     def write_filtered_data(self):
         audio = self.rb.read(self.processing_size).astype(numpy.float64)
+        
+        if self.hasrun == False:
+            for i in range(self.channels):
+                  # it takes between 600ms and 450ms to run this code.
+                #it has been optimized as much as possible.
+                      #add variance passing of blanks
+                self.buffer[:, i], self.variancebuffer[:, i]  = self.filter.numba_fabada(audio[:, i], self.variancebuffer[:, i])
+            self.processedrb.write(self.buffer, error=True)
+            return
         for i in range(self.channels):
             # it takes between 600ms and 450ms to run this code.
             #it has been optimized as much as possible.
             #nothing further can be done to optimize this python
-            self.buffer[:, i] = self.filter.numba_fabada(audio[:, i])
+            self.buffer[:, i],self.variancebuffer[:, i]  = self.filter.numba_fabada(audio[:, i], self.variancebuffer[:, i], True)
         self.processedrb.write(self.buffer,error=True)
 
     def run(self):
@@ -347,7 +372,7 @@ class FilterRun(Thread):
             else:
                 self.write_filtered_data()
                 #time.sleep(0.01)
-        return None
+
 
     def stop(self):
         self.running = False
@@ -408,12 +433,12 @@ class StreamSampler(object):
         self._channels = channels
         # self.rb = RingBuffer((int(sample_rate) * 5, channels), dtype=numpy.dtype(dtype))
         self.rb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
-                                     seconds=2,  # Buffer size (need larger than processing size)[seconds * sample_rate]
+                                     seconds=6,  # Buffer size (need larger than processing size)[seconds * sample_rate]
                                      buffer_delay=0,  # #this buffer doesnt need to have a size
                                      dtype=numpy.dtype(dtype))
 
         self.processedrb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
-                                     seconds=2,  # Buffer size (need larger than processing size)[seconds * sample_rate]
+                                     seconds=6,  # Buffer size (need larger than processing size)[seconds * sample_rate]
                                      buffer_delay=0, # as long as fabada completes in O(n) of less than the sample size in time
                                      dtype=numpy.dtype(dtype))
 
