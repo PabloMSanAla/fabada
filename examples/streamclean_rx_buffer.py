@@ -397,7 +397,6 @@ class FilterRun(Thread):
     def write_filtered_data(self):
         audio = self.rb.read(self.processing_size)
         for i in range(self.channels):
-            print(audio[:, i])
             filtered = self.filter.fabada(audio[:, i])
             self.buffer[:, i] = filtered
         self.processedrb.write(self.buffer,error=False)
@@ -631,7 +630,7 @@ class StreamSampler(object):
                               input=True,
                               input_device_index=self.micindex,  # device_index,
                               #each frame carries twice the data of the frames
-                              frames_per_buffer= int(self._processing_size),  
+                              frames_per_buffer= int(self._processing_size),
                               stream_callback=self.non_blocking_stream_read,
                               start=False  # Need start to be False if you don't want this to start right away
                               )
