@@ -176,7 +176,7 @@ def variance(data: [float]):
     # The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
     data_variance = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data)])
     data_variance = data_variance + 4096 # bring le floor up, gotta do this for the high frequency noise
-    data_variance = (data_variance * data_variance) #exponentiate
+    data_variance = (data_variance ** 3) #exponentiate, 3 be as good as the second power for some reazon
     return data_variance
 
 @numba.jit((numba.float64[:])( numba.float64[:],numba.float64[:],numba.float64[:]))
