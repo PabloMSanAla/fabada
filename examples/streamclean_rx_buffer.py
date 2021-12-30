@@ -177,16 +177,18 @@ def variance(data: [float]):
     # The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
     data_variance = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data)])
     data_variance = data_variance + 4096 # bring le floor up, gotta do this for the high frequency noise
-    data_variance = (data_variance * 2)
+    data_variance = (data_variance * data_variance)  #exponentiate
     return data_variance
 
+@numba.jit((numba.float64)( numba.float64[:],numba.float64[:],numba.float64[:]))
+def power(data: [float],posterior_mean: [float],data_variance: [float]):
+    x = numpy.subtract(data, posterior_mean)
+    return numpy.sum((numpy.sign(x) * (numpy.abs(x) ** numpy.divide(2, data_variance))))
 
 class Filter(object):
 
-    #@numba.jit((numba.float64[:])(numba.float64[:]))
-    #attempting to accelerate this code with numba actually makes it slower for some reason
-    @staticmethod
-    def numba_fabada(data: [float]):
+    #attempting to accelerate this code with numba and staticmethod actually makes it slower for some reason
+    def numba_fabada(self,data: [float]):
         bayesian_weight = numpy.zeros_like(data)
         bayesian_model = numpy.zeros_like(data)
         max_iter: int = 100  # more than this and the computer starts to complain?
@@ -196,10 +198,8 @@ class Filter(object):
         #a different function, and internally a different means and variance calculation function.
         #This work is beyond the scope of this author
 
-        data = data / 1.0
         # data = data[math.isnan(data)] = 0.0
         #min = 2.22044604925e-16
-        numpy.seterr(all="raise")
         # if (data.ndim < 1 or data.ndim >2 ):
         #   print("number of dimensions not supported~!")
         #  return numpy.zeros_like(data)#remove this logic from a loop that runs 100 times
@@ -245,9 +245,8 @@ class Filter(object):
 
         # EVALUATE CHI2
         #numpy does not allow fractional powers of negative numbers!
-        x = numpy.subtract(data, posterior_mean)
-        y = numpy.divide(2, data_variance)
-        chi2_data = numpy.sum((numpy.sign(x) * ((numpy.abs(x)) ** y)))
+
+        chi2_data = power(data, posterior_mean,data_variance)
         chi2_pdf = chi2_pdf_call(chi2_data, data.size)
         chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
         chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
@@ -297,10 +296,8 @@ class Filter(object):
             evidence_derivative = numpy.mean(evidence) - evidence_previous
 
             # EVALUATE CHI2
-            x = numpy.subtract(data, posterior_mean)
-            y = numpy.divide(2, data_variance)
+            chi2_data  = power(data, posterior_mean,data_variance)
 
-            chi2_data = numpy.sum((numpy.sign(x) * ((numpy.abs(x)) ** y)))
             chi2_pdf = chi2_pdf_call(chi2_data, data.size)
             chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
             chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
@@ -339,11 +336,10 @@ class FilterRun(Thread):
     def write_filtered_data(self):
         audio = self.rb.read(self.processing_size).astype(numpy.float64)
         for i in range(self.channels):
-            t= time.time()
-            filtered = self.filter.numba_fabada(audio[:, i])
-            self.buffer[:, i] = filtered
-            x = time.time()
-            print((x - t) * 1000)
+            # it takes between 600ms and 450ms to run this code.
+            #it has been optimized as much as possible.
+            #nothing further can be done to optimize this python
+            self.buffer[:, i] = self.filter.numba_fabada(audio[:, i])
         self.processedrb.write(self.buffer,error=True)
 
     def run(self):
@@ -405,7 +401,7 @@ class StreamSampler(object):
         return cls.dtype_to_paformat[dtype.name]
 
 
-    def __init__(self, processing_size=48000, sample_rate=48000, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
+    def __init__(self, processing_size=96000, sample_rate=48000, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
                  micindex=1, speakerindex=1, dtype=numpy.float32):
         self.pa = pyaudio.PyAudio()
         self._processing_size = processing_size
