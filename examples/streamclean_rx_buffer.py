@@ -43,8 +43,8 @@ import pyaudio
 import numba
 from np_rw_buffer import AudioFramingBuffer
 from threading import Thread
-import time
 import math
+import time
 
 @numba.jit ((numba.float64)(numba.float64[:]))
 def signaltonoise_dB(data: [float]):
@@ -125,7 +125,7 @@ def meanx2(data:[float]):
     mean[-1, 0] /= 3
     return mean #simple, easy, 2-dimensional function
 
-#TODO This function takes 1600 milliseconds on the first pass. Why?
+
 @numba.jit(numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]))
 def posterior_mean_gen(prior_mean: [float],prior_variance: [float],data: [float],data_variance: [float],posterior_variance: [float]):
     return ( prior_mean / prior_variance + data / data_variance ) * posterior_variance
@@ -134,7 +134,7 @@ def posterior_mean_gen(prior_mean: [float],prior_variance: [float],data: [float]
 #notes: by eliminating scipy, we make it much faster. Ordinarily, this takes up 80ms of 80ms per cycle of fabada.
 @numba.jit(numba.float64(numba.float64,numba.int16))
 def chi2_pdf_call(data: float ,size: int):
-    #start = timer()
+
     if not data == 0:
         pdf = numpy.exp((numpy.log(2) - .5 * numpy.log(2) * size - math.lgamma(.5 * size)) + data * (numpy.log(size - 1.)) - .5 * data ** 2)
         return pdf
@@ -173,21 +173,27 @@ def variance(data: [float]):
     #i guess. i dont really know. But this is the source of the clicking, the dropped samples, etc.
     #the only time fabada will work for this particular application is when we get this right.
 
-    data1 = data / 1.0  # get a copy of data?
-    data_alpha_padded = numpy.concatenate(
-        (numpy.full((1,), (data1[0] / 2) + (data1[1] / 2)), data1, numpy.full((1,), (data1[-1] / 2) + (data1[-2] / 2))))
-    data_beta = numpy.asarray([(i + j + k / 3) for i, j, k in
-                               zip(data_alpha_padded, data_alpha_padded[1:], data_alpha_padded[2:])])
+   # data1 = data / 1.0  # get a copy of data?
+    #data_alpha_padded = numpy.concatenate(
+     #   (numpy.full((1,), (data1[0] / 2) + (data1[1] / 2)), data1, numpy.full((1,), (data1[-1] / 2) + (data1[-2] / 2))))
+   #data_beta = numpy.asarray([(i + j + k / 3) for i, j, k in
+    #                           zip(data_alpha_padded, data_alpha_padded[1:], data_alpha_padded[2:])])
     # a bit like a weiner filter, this is a averaging filter that helps find the smooth mean
-    data_mean = numpy.mean(data_beta)  # get the mean
+    data_mean = abs(numpy.median(data))* numpy.ones_like(data)  # get the mean
+    data_max = abs(numpy.median(data)**2)
     # The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
-    data_variance = numpy.asarray([(abs(data_mean - x)) for x in data1])
-    data_variance = data_variance * data_variance * (2.71828 ** 4)
-    data_variance_padded = numpy.concatenate(
-        (numpy.full((1,), (data_variance[0] / 2) + (data_variance[1] / 2)), data_variance,
-         numpy.full((1,), (data_variance[-1] / 2) + (data_variance[-2] / 2))))
-    data_variance = numpy.asarray([(i + j + k / 3) for i, j, k in
-                                   zip(data_variance_padded, data_variance_padded[1:], data_variance_padded[2:])])
+    data_variance = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data)])
+    data_variance = data_variance + 1024 # bring le floor up
+    data_variance = (data_variance * data_variance * data_variance  ) #* 2.71828 #(gotta at least have this much or sometimes it will just drop the sample)
+
+    #data_variance =  numpy.where(data_variance <1 ,data_variance + 1 ,data_variance)#data_variance[data_variance< 64]  = 64.0
+   # data_variance = numpy.where(data_variance<data_max,data_max * (2.71828 ** 4),data_variance)
+
+   # data_variance_padded = numpy.concatenate(
+     #   (numpy.full((1,), (data_variance[0] / 2) + (data_variance[1] / 2)), data_variance,
+     #    numpy.full((1,), (data_variance[-1] / 2) + (data_variance[-2] / 2))))
+   # data_variance = numpy.asarray([(i + j + k / 3) for i, j, k in
+       #                            zip(data_variance_padded, data_variance_padded[1:], data_variance_padded[2:])])
 
 
 
@@ -261,7 +267,6 @@ def fabada(data: [float]): #-> numpy.array:
         prior_variance = posterior_variance
 
         # APPLIY BAYES' THEOREM
-        # prevent le' devide by le zeros
 
         posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
         posterior_mean = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
@@ -287,8 +292,9 @@ def fabada(data: [float]): #-> numpy.array:
 
             if (
                     (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
-                    and (evidence_derivative < 0)
-                    or (iteration > max_iter)
+                     or(evidence_derivative < 0)
+                     or(iteration > max_iter)
+                     #this isnt the way the algo is meant to work but its not acting consistent so for now
             ):
                 #converged = True
                 break #break the loop when we're done by prematurely setting converged and returning
@@ -311,9 +317,6 @@ def fabada(data: [float]): #-> numpy.array:
 
             # APPLIY BAYES' THEOREM
             #prevent le' devide by le zeros
-            #prior_variance[prior_variance == 0] = min
-            #data_variance[data_variance == 0] = min
-            #edit: now that we run once, this code isnt needed?
 
             posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
             posterior_mean =  posterior_mean_gen(prior_mean,prior_variance,data,data_variance,posterior_variance)
@@ -360,23 +363,26 @@ class FilterRun(Thread):
         self.dtype = dtype
         self.buffer = numpy.ndarray(dtype=self.dtype, shape=[int(self.processing_size * self.channels)])
         self.buffer = self.buffer.reshape(-1,self.channels)
+
     def write_filtered_data(self):
         audio = self.rb.read(self.processing_size).astype(numpy.float64)
         for i in range(self.channels):
             filtered = fabada(audio[:, i])
             self.buffer[:, i] = filtered
-        self.processedrb.write(self.buffer,error=False)
+        self.processedrb.write(self.buffer,error=True)
 
     def run(self):
-        while 1:
+        while self.running:
             if len(self.rb) < self.processing_size * 2:
                 time.sleep(0.001)
             else:
                 self.write_filtered_data()
                 #time.sleep(0.01)
+        return None
 
     def stop(self):
         self.running = False
+
 
 
 
@@ -416,22 +422,13 @@ class StreamSampler(object):
     # At the common sample rate of 48 kHz (48,000 samples per second), this means each second of audio occupies 192 kB of memory. ''
 
     #processingsize determination
-    #a single second of data requires 192kb in stereo, per mozilla. It requires 96kb in mono.
-    #we sample twice as much data as our processingsize indicates, because that is per-channel.
-    #1 sample frames = 16 bits. but remember, our buffer is pulling twice that and running it twice.
-    # so whatever processing size we have, is accurate against 96kb. 98304 bits(96kb) -> 6144 frames= 1 second.
-    # the clicks are still visible at around 100ms intervals when sampling this way.
-    #it's not clear why.
-    #depending on the sample size, the clicks are more or less pronounced.
-    #Additionally, the clicks have to do with the variance calculation. If I could improve this...
-    #fabada does not do well with small windows.
-    #6.144 frames per ms. About 2150 for a 350ms format window
-    #with this setting, fabada's output is NOT less noisy!
-    #By setting it to 6144 we have a good interval to compute noise over. 1 second delay.
+    #24576 = 0.512s
+    #48 frames = 1ms.
+    #we now know the click happens between each frame on the edges of the frames. Why?
 
 
 
-    def __init__(self, processing_size=6144, sample_rate=48000, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
+    def __init__(self, processing_size=48000, sample_rate=48000, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
                  micindex=1, speakerindex=1, dtype=numpy.float32):
         self.pa = pyaudio.PyAudio()
         self._processing_size = processing_size
@@ -440,13 +437,13 @@ class StreamSampler(object):
         self._channels = channels
         # self.rb = RingBuffer((int(sample_rate) * 5, channels), dtype=numpy.dtype(dtype))
         self.rb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
-                                     seconds=5,  # Buffer size (need larger than processing size)[seconds * sample_rate]
+                                     seconds=6,  # Buffer size (need larger than processing size)[seconds * sample_rate]
                                      buffer_delay=0,  # #this buffer doesnt need to have a size
                                      dtype=numpy.dtype(dtype))
 
         self.processedrb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
-                                     seconds=5,  # Buffer size (need larger than processing size)[seconds * sample_rate]
-                                     buffer_delay=1.2, #give us a 100ms window
+                                     seconds=6,  # Buffer size (need larger than processing size)[seconds * sample_rate]
+                                     buffer_delay=1, # as long as fabada completes in O(n) of less than the sample size in time
                                      dtype=numpy.dtype(dtype))
 
         self.filterthread = FilterRun(self.rb,self.processedrb,self._channels,self._processing_size,self.dtype)
@@ -572,6 +569,10 @@ class StreamSampler(object):
             self.speakerstream.close()
         except (AttributeError, Exception):
             pass
+        try:
+            self.filterthread.join()
+        except (AttributeError, Exception):
+            pass
 
     def open_mic_stream(self):
         device_index = None
@@ -661,7 +662,6 @@ class StreamSampler(object):
         if self.speakerstream is None:
             self.speakerstream = self.open_speaker_stream()
         self.speakerstream.start_stream()
-        self.filterthread.start()
         # Don't do this here. Do it in main. Other things may want to run while this stream is running
         # while self.micstream.is_active():
         #     eval(input("main thread is now paused"))
@@ -672,9 +672,11 @@ class StreamSampler(object):
 if __name__ == "__main__":
     SS = StreamSampler(buffer_delay=0)
     SS.listen()
+    SS.filterthread.start()
 
     while SS.is_running():
         inp = input('Press enter to quit!\n')   # Halt until user input
-        break
+        SS.filterthread.stop()
+        SS.stop()
 
-    SS.stop()
+    #SS.stop()
