@@ -145,6 +145,11 @@ def chi2_pdf_call(data: [float],size):
 def nan(data: [float]):
     return numpy.asarray([x if not math.isnan(x) else 0.0 for x in data])
 
+@numba.jit(numba.int16( numba.int16,numba.int16,numba.int16))
+def bound(value: int, low: int = 20, high: int =100):
+     diff = high - low
+     return (((value - low) % diff) + low)
+
 @numba.jit((numba.float64[:])( numba.float64[:]))
 def variance(data: [float]):
 
@@ -158,23 +163,31 @@ def variance(data: [float]):
         (numpy.full((1,), (data1[0] / 2) + (data1[1] / 2)), data1, numpy.full((1,), (data1[-1] / 2) + (data1[-2] / 2))))
     data_beta = numpy.asarray([(i + j + k / 3) for i, j, k in
                                zip(data_alpha_padded, data_alpha_padded[1:], data_alpha_padded[2:])])
+    #a bit like a weiner filter, this is a averaging filter that helps find the smooth mean
+    data_mean = numpy.mean(data_beta) #get the mean
+    #The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
+    data_variance= numpy.asarray([(abs(data_mean - x)) ** 2 for x in data1])
+    #print (data_variance)
+    #print(numpy.mean(data_variance),(numpy.mean(data1)))
+    #the algorithm OCCASIONALLY takes a giant shit
+    #but WHY is it taking a giant shit??
+    #[74329902.55352211 67757248.82468097 51918929.63034503...<bad
+     #60349268.14146699 52337688.42043835 58483937.18969833]
+   # 157455248.3786176(9012.660807291666, 9012.660807291666)<the consequence of bad
+    #[74296660.81459373 67758433.17678991 51905556.25920093...<bad
+    # 60365923.97919876 52353199.42613887 58500333.61792489]<bad
+   # 157456076.8060095(9012.691569010416, 9012.691569010416)<bad
+   # [1.02672646e+08 1.18652028e+08 1.16203035e+08... 2.19091838e+08 < good
+   #  2.12510829e+08 2.16170892e+08]
+   # 197914570.7785603(10280.705891927084, 10280.705891927084)<good
+    #data_variance= nan(data_variance)
 
-    data_variance_residues = numpy.absolute(data_beta - data1)
-    datamax = numpy.amax(data1)
-    variance_residues_mean = numpy.mean(data_variance_residues)
-    data_beta_mean = numpy.mean(data_beta)
-    data_mean = (datamax + variance_residues_mean + data_beta_mean) / 3
-    floor = data_mean * numpy.ones_like(data)
-    data_variance = numpy.absolute(floor - data1)
-    # variance5 = data_mean * 1.61803398875
-    # print(data_mean, variance5)
-    data_variance = data_variance * data_mean * 1.61803398875
-    #cant use numpy.nan_to_num in numpa, hacky workaround
-    data_variance= nan(data_variance)
     # bayes = numpy.asarray([j if x!=0 else x for j,x in zip(bayes,data)])
 
     # data_variance = numpy.asarray([j if x<1 else x for j,x in zip(data_variance,data)])
     return data_variance
+
+
 
 class Filter(object):
 
@@ -215,6 +228,7 @@ class Filter(object):
             else:
                 print("Warning: Size of array not supported")
             t=timer()
+            numpy.seterr(all='raise')
 
 
         data = nan(data) #sanitize your data
@@ -237,15 +251,17 @@ class Filter(object):
 
         try:
         # INITIALIZING ALGORITMH ITERATION ZERO
+
             posterior_mean = data
             posterior_variance = data_variance
+
+
             evidence = Evidence1st(0.0, numpy.sqrt(data_variance), 0.0, data_variance)
             initial_evidence = evidence
             chi2_pdf, chi2_data, iteration = 0, data.size, 0
             chi2_pdf_derivative, chi2_data_min = 0, data.size
-            bayesian_weight = 0
-            bayesian_model = 0
-
+            bayesian_weight = 0.0
+            bayesian_model = 0.0
             #converged = False
             iteration += 1  # set  number of iterations done
 
@@ -255,7 +271,7 @@ class Filter(object):
 
             iteration += 1  # Check number of iterartions done
 
-         # GENERATES PRIORS
+        # GENERATES PRIORS
             if (posterior_mean.ndim == 1):
                 prior_mean = meanx1(posterior_mean)
             if (posterior_mean.ndim == 2):
@@ -274,18 +290,19 @@ class Filter(object):
             evidence = Evidence(prior_mean, data, prior_variance, data_variance)
             evidence_derivative = numpy.mean(evidence) - evidence_previous
 
-         # EVALUATE CHI2
+        # EVALUATE CHI2
             chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
-            chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=data.size)
+
+            chi2_pdf = chi2_pdf_call(chi2_data, data.size)
             chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
             chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
          # COMBINE MODELS FOR THE ESTIMATION
+
             model_weight = evidence * chi2_data
             bayesian_weight += model_weight
             bayesian_model += model_weight * posterior_mean
             chi2_data_min = chi2_data
-
 
             while 1:
 
@@ -328,7 +345,7 @@ class Filter(object):
 
                      # EVALUATE CHI2
                 chi2_data = numpy.sum((data - posterior_mean) ** 2 / data_variance)
-                chi2_pdf = scipy.stats.chi2.pdf(chi2_data, df=data.size)
+                chi2_pdf = chi2_pdf_call(chi2_data, data.size)
                 chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
                 chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
@@ -341,7 +358,11 @@ class Filter(object):
             model_weight = initial_evidence * chi2_data_min
             bayesian_weight += model_weight
             bayesian_model += model_weight * data
+
+
             bayes = bayesian_model / bayesian_weight
+
+
 
             bayes =  nan(bayes)
             # don't accidentally insert garbage into our stream
@@ -361,28 +382,6 @@ class Filter(object):
         return bayes #this will either return zeros or the desired data
 
 
-###
-#'''
-#From mozilla:
-
-#''Stereo audio is probably the most commonly used channel arrangement in web audio, and 16-bit samples are used for the majority of day-to-day audio in use today.
-# For 16-bit stereo audio, each sample taken from the analog signal is recorded as two 16-bit integers, one for the left channel and one for the right.
-# That means each sample requires 32 bits of memory.
-# At the common sample rate of 48 kHz (48,000 samples per second), this means each second of audio occupies 192 kB of memory. ''
-
-#Our processing size is 16384 frames * 2(for the channels), 16 bit memory.
-#96000kB represents one second worth of data in frames-KB.
-#96kb represents 1MS.
-#64 frames are in one kilobit.
-#1ms is equivalent to about 1500 frames.
-
-#at 2048 frames, it happens about once evey 48ms
-#at 4096 it happens every 86
-#at 8192 it happens according to an irregular pattern:
-#once every 172 there will be a weaker click
-#every 2 or 4 there will be a stronger click
-#'''
-
 class FilterRun(Thread):
     def __init__(self,rb,pb,channels,processing_size,dtype):
         super(FilterRun, self).__init__()
@@ -400,7 +399,7 @@ class FilterRun(Thread):
         for i in range(self.channels):
             filtered = self.filter.fabada(audio[:, i])
             self.buffer[:, i] = filtered
-        self.processedrb.write(self.buffer, error=True)
+        self.processedrb.write(self.buffer,error=False)
 
     def run(self):
         while 1:
@@ -443,7 +442,30 @@ class StreamSampler(object):
             pass
         return cls.dtype_to_paformat[dtype.name]
 
-    def __init__(self, processing_size=16384, sample_rate=48000, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
+    # From mozilla:
+
+    # ''Stereo audio is probably the most commonly used channel arrangement in web audio, and 16-bit samples are used for the majority of day-to-day audio in use today.
+    # For 16-bit stereo audio, each sample taken from the analog signal is recorded as two 16-bit integers, one for the left channel and one for the right.
+    # That means each sample requires 32 bits of memory.
+    # At the common sample rate of 48 kHz (48,000 samples per second), this means each second of audio occupies 192 kB of memory. ''
+
+    #processingsize determination
+    #a single second of data requires 192kb in stereo, per mozilla. It requires 96kb in mono.
+    #we sample twice as much data as our processingsize indicates, because that is per-channel.
+    #1 sample frames = 16 bits. but remember, our buffer is pulling twice that and running it twice.
+    # so whatever processing size we have, is accurate against 96kb. 98304 bits(96kb) -> 6144 frames= 1 second.
+    # the clicks are still visible at around 100ms intervals when sampling this way.
+    #it's not clear why.
+    #depending on the sample size, the clicks are more or less pronounced.
+    #Additionally, the clicks have to do with the variance calculation. If I could improve this...
+    #fabada does not do well with small windows.
+    #6.144 frames per ms. About 2150 for a 350ms format window
+    #with this setting, fabada's output is NOT less noisy!
+    #By setting it to 6144 we have a good interval to compute noise over. 1 second delay.
+
+
+
+    def __init__(self, processing_size=6144, sample_rate=48000, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
                  micindex=1, speakerindex=1, dtype=numpy.int16):
         self.pa = pyaudio.PyAudio()
         self._processing_size = processing_size
@@ -460,7 +482,7 @@ class StreamSampler(object):
 
         self.processedrb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
                                      seconds=5,  # Buffer size (need larger than processing size)[seconds * sample_rate]
-                                     buffer_delay=buffer_delay,  # Save data for 1 second then start playing
+                                     buffer_delay=1.2, #give us a 100ms window
                                      dtype=numpy.dtype(dtype))
 
         self.filterthread = FilterRun(self.rb,self.processedrb,self._channels,self._processing_size,self.dtype)
@@ -654,7 +676,8 @@ class StreamSampler(object):
         # if len(filtered) < frame_count:
         #     filtered = numpy.zeros((frame_count, self.channels), dtype=self.dtype)
         if len(self.processedrb) < self.processing_size:
-            print('Not enough data to play! Increase the buffer_delay')
+            #print('Not enough data to play! Increase the buffer_delay')
+            #uncomment this for debug
             audio = numpy.zeros((self.processing_size, self.channels), dtype=self.dtype)
             return audio, pyaudio.paContinue
 
