@@ -45,7 +45,7 @@ from np_rw_buffer import AudioFramingBuffer
 from threading import Thread
 import math
 import time
-import matplotlib.pyplot as plt
+
 
 
 @numba.jit ((numba.float64)(numba.float64[:]))
