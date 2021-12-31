@@ -95,20 +95,6 @@ def meanx1(data: [float]):
     return meanx
     #simple, easy, 1-dimensional function
 
-#this code works but it doesnt work very well.
-#as an example of how to vectorize code, it works very well, but vectorizing this 1d transform doesn't work well.
-#on the other hand, maybe i just wrote it wrong? something to do with the way the data is copied..
-#@numba.guvectorize([(numba.float64[:],numba.float64, numba.float64[:])],'(n),()->(n)')
-#def meanx1(data: [float], blank: float , meanx: [float]):
- #  meanx = data / 1.0
-  # blank = blank
-   #meanx[:-1] += data [1:]
-   #meanx[1:] += data [:-1]
-   #meanx[1:-1] /= 3
-   #meanx[0] /= 2
-   #meanx[-1] /= 2
- # return meanx #simple, easy, 1-dimensional function
-
 @numba.jit#((numba.float64[::])(numba.float64[::]))
 def meanx2(data:[float]):
     mean = data / 1.0
@@ -132,13 +118,13 @@ def meanx2(data:[float]):
 def posterior_mean_gen(prior_mean: [float],prior_variance: [float],data: [float],data_variance: [float],posterior_variance: [float]):
     return ( prior_mean / prior_variance + data / data_variance ) * posterior_variance
 
-@numba.jit(numba.float64[:](numba.float64[:],numba.int32))
-def chi2_pdf_call(x: [float] ,df: int):
+@numba.jit(numba.float64(numba.float64,numba.int32))
+def chi2_pdf_call(x: float ,df: int):
     ## chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
     gammar = (2. * math.lgamma(df / 2.))
     gammaz = ((df / 2.) - 1.)
     gamman = (x / 2)
-    gammas = (numpy.sign(gamman) * ((numpy.abs(gamman)) ** gammaz))
+    gammas = (numpy.sign(gamman) * ((numpy.abs(gamman)) * gammaz)) #raising this to the powa will just result in FUBAR
     gammaq =  numpy.exp(-x / 2)
     gammaa =  1. / gammar
 
@@ -172,52 +158,36 @@ def variance(data: [float]):
     #the only time fabada will work for this particular application is when we get this right.
 
     data_mean = abs(numpy.median(data))* numpy.ones_like(data)  # get the mean
-    data_max = abs(numpy.median(data)**2)
     # The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
     data_variance = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data)])
-    data_variance = data_variance + 4096 # bring le floor up, gotta do this for the high frequency noise
-    data_variance = (data_variance ** 3) #exponentiate, 3 be as good as the second power for some reazon
+    data_variance = data_variance + 44100 # bring le floor up- at most I have used 4096 here with success. However, it makes the signal weaker
+    #if we bring this up by 0, the output is extremely noisy.
+    data_variance = (data_variance ** 2) #exponentiate
     return data_variance
 
-@numba.jit((numba.float64[:])( numba.float64[:],numba.float64[:],numba.float64[:]))
-def power(data: [float],posterior_mean: [float],data_variance: [float]):
+@numba.jit((numba.float64)( numba.float64[:],numba.float64[:],numba.float64[:]))
+def power(data:[float],posterior_mean: [float],data_variance: [float]):
     x = numpy.subtract(data, posterior_mean)
-    experiment = 2.0 * numpy.ones_like(data)
-    z =  numpy.power(numpy.abs(x) , numpy.divide(experiment, data_variance))
+    z =  numpy.sum(numpy.power(numpy.abs(x) , numpy.divide(2, data_variance)))
     return z
 
 class Filter(object):
 
     #attempting to accelerate this code with numba and staticmethod actually makes it slower for some reason
-    def numba_fabada(self,data: [float],previous_var: [float], has_run: bool = False):
+    def numba_fabada(self,data: [float]):
         bayesian_weight = numpy.zeros_like(data)
         bayesian_model = numpy.zeros_like(data)
-        max_iter: int = 64  # more than this and the computer starts to complain?
+        max_iter: int = 200  # more than this and the computer starts to complain?
         #todo: optimize number of cycles
         # Must strip all non-essential components from this function to make it work as fast as possible
         #numba doesn't like unions, arbitrary logic, so for fabada to work on 2x the parent thread needs to call
         #a different function, and internally a different means and variance calculation function.
         #This work is beyond the scope of this author
 
-        # data = data[math.isnan(data)] = 0.0
-        #min = 2.22044604925e-16
-        # if (data.ndim < 1 or data.ndim >2 ):
-        #   print("number of dimensions not supported~!")
-        #  return numpy.zeros_like(data)#remove this logic from a loop that runs 100 times
-
         # data_variance = numpy.array(data_variance / 1.0)
 
         data_variance = variance(data)
 
-
-    #our per sample variance is inconsistent. Let's fix this.
-        if(has_run == False):
-            variance_return = data_variance
-
-        # take the past, make it impact the future.
-        if(has_run == True):
-            variance_return = (data_variance + data_variance + previous_var)/3
-            data_variance = variance_return 
 
         # initialize bayes for the function return
 
@@ -274,7 +244,7 @@ class Filter(object):
         while 1:
 
             if (
-                    (numpy.abs(numpy.sum(chi2_data)) > (data.size) and numpy.sum(chi2_pdf_snd_derivative) >= 0)
+                    ((chi2_data) > (data.size) and chi2_pdf_snd_derivative >= 0)
                     or (evidence_derivative < 0)
                     or (iteration > max_iter)
 
@@ -325,7 +295,7 @@ class Filter(object):
 
         bayes = numpy.divide(bayesian_model,bayesian_weight)
 
-        return bayes, variance_return  # this will either return zeros or the desired data
+        return bayes  # this will either return zeros or the desired data
 
 
 
@@ -343,27 +313,18 @@ class FilterRun(Thread):
         self.dtype = dtype
         self.buffer = numpy.ndarray(dtype=self.dtype, shape=[int(self.processing_size * self.channels)])
         self.buffer = self.buffer.reshape(-1,self.channels)
-        self.hasrun = False
-        self.variancebuffer = numpy.zeros_like(self.buffer)
-        self.zeros = numpy.zeros_like(self.buffer)
 
     def write_filtered_data(self):
+        t = time.time()
         audio = self.rb.read(self.processing_size).astype(numpy.float64)
-        
-        if self.hasrun == False:
-            for i in range(self.channels):
-                  # it takes between 600ms and 450ms to run this code.
-                #it has been optimized as much as possible.
-                      #add variance passing of blanks
-                self.buffer[:, i], self.variancebuffer[:, i]  = self.filter.numba_fabada(audio[:, i], self.variancebuffer[:, i])
-            self.processedrb.write(self.buffer, error=True)
-            return
         for i in range(self.channels):
             # it takes between 600ms and 450ms to run this code.
             #it has been optimized as much as possible.
             #nothing further can be done to optimize this python
-            self.buffer[:, i],self.variancebuffer[:, i]  = self.filter.numba_fabada(audio[:, i], self.variancebuffer[:, i], True)
-        self.processedrb.write(self.buffer,error=True)
+            self.buffer[:, i]  = self.filter.numba_fabada(audio[:, i])
+        self.processedrb.write(self.buffer,error=False)
+        x = time.time()
+        print("if this number is less than 2,000, fabada is realtime. Otherwise reduce max_iterations: fabada took ", (x - t)*1000, " ms")
 
     def run(self):
         while self.running:
@@ -377,22 +338,6 @@ class FilterRun(Thread):
     def stop(self):
         self.running = False
 
-
-
-    #24576 = 0.512s
-    #48 frames = 1ms.
-    #we now know the click happens between each frame on the edges of the frames. Why?
-    #
-    #todo: process the audio as 2/3 chunks, and overlap it with 2/3 chunks offset by 1/3, then average them.
-    #This will let me overlap fabada's processing and smooth it out over time.
-    #
-    #Todo: we sample 48000 samples, lol, so a simple FFT could? in theory? act as a filter and chop our data.
-    #Otherwise i'll have to import scipy again and copy a bit off https://github.com/twoz/pyEQ
-    #Then, once I have it frequency interpolated, I can look at the difference between ground floor and audio.
-    #ie,if its possible to iterate over the array and "guess" where the passband from the SDR ends, I can then slice this
-    #and send the slice to fabada, then reverse-FFT integrate it back into the stream. This will make fabada and variation computes work better
-    #What's more, this may solve the current dillemma with the clicking, by eliminating high frequency inputs and outputs.
-    #
 
 
 class StreamSampler(object):
@@ -423,11 +368,23 @@ class StreamSampler(object):
             pass
         return cls.dtype_to_paformat[dtype.name]
 
+    #anything works actually but 96000 is the most smooth because we can sample the ENTIRE bandwidth at once
+    #wheras anything less than this will result in some minor clipping, hard to notice but it IS noticable
+    #coincidentally 96000 is also one full second of data
+    #how do we say that? 96000 frames = 96000 * 16bits -> do the math, it's 192kb
+    #Humans cannot hear more than 22,000hz, so sampling at 88200 for 44100 input actually works well also.
+    #also, we MUST decode at float32. Any precision lost in translation is immediately audible.
+    #By translating to float32, the approximation is _closer_ to the output , which at most can be float32
+    #There are rarely more than 16 bits of precision in an ADC anyway, so we dont need to worry about the input.
+    #input device should be 16 bits, 44100 or 48000. 48000 is a tiny bit slower to process- 
+    #set the floor in variance from 44100 to 48000, and set the max_iterations down to 100~120.
+    #OTOH if I could vectorize this
 
-    def __init__(self, processing_size=96000, sample_rate=48000, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
+
+    def __init__(self, processing_size=88200, sample_rate=44100, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
                  micindex=1, speakerindex=1, dtype=numpy.float32):
         self.pa = pyaudio.PyAudio()
-        self._processing_size = processing_size
+        self._processing_size = int(sample_rate * 2) #processing size MUSt exceed clipping
         # np_rw_buffer (AudioFramingBuffer offers a delay time)
         self._sample_rate = sample_rate
         self._channels = channels
