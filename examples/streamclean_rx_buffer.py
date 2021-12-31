@@ -43,8 +43,10 @@ import pyaudio
 import numba
 from np_rw_buffer import AudioFramingBuffer
 from threading import Thread
+import concurrent.futures
 import math
 import time
+
 
 
 
@@ -171,10 +173,7 @@ def power(data:[float],posterior_mean: [float],data_variance: [float]):
     z =  numpy.sum(numpy.power(numpy.abs(x) , numpy.divide(2, data_variance)))
     return z
 
-class Filter(object):
-
-    #attempting to accelerate this code with numba and staticmethod actually makes it slower for some reason
-    def numba_fabada(self,data: [float]):
+def numba_fabada(self,data: [float]):
         bayesian_weight = numpy.zeros_like(data)
         bayesian_model = numpy.zeros_like(data)
         max_iter: int = 200  # more than this and the computer starts to complain?
@@ -185,7 +184,7 @@ class Filter(object):
         #This work is beyond the scope of this author
 
         # data_variance = numpy.array(data_variance / 1.0)
-
+        print(data)
         data_variance = variance(data)
 
 
@@ -297,14 +296,9 @@ class Filter(object):
 
         return bayes  # this will either return zeros or the desired data
 
-
-
-
-
 class FilterRun(Thread):
     def __init__(self,rb,pb,channels,processing_size,dtype):
         super(FilterRun, self).__init__()
-        self.filter = Filter()
         self.running = True
         self.rb = rb
         self.processedrb = pb
@@ -315,7 +309,7 @@ class FilterRun(Thread):
         self.buffer = self.buffer.reshape(-1,self.channels)
 
     def write_filtered_data(self):
-        t = time.time()
+        #t = time.time()
         audio = self.rb.read(self.processing_size).astype(numpy.float64)
         for i in range(self.channels):
             # it takes between 600ms and 450ms to run this code.
@@ -323,8 +317,8 @@ class FilterRun(Thread):
             #nothing further can be done to optimize this python
             self.buffer[:, i]  = self.filter.numba_fabada(audio[:, i])
         self.processedrb.write(self.buffer,error=False)
-        x = time.time()
-        print("if this number is less than 2,000, fabada is realtime. Otherwise reduce max_iterations: fabada took ", (x - t)*1000, " ms")
+        #x = time.time()
+        #print("if this number is less than 2,000, fabada is realtime. Otherwise reduce max_iterations: fabada took ", (x - t)*1000, " ms")
 
     def run(self):
         while self.running:
@@ -376,9 +370,7 @@ class StreamSampler(object):
     #also, we MUST decode at float32. Any precision lost in translation is immediately audible.
     #By translating to float32, the approximation is _closer_ to the output , which at most can be float32
     #There are rarely more than 16 bits of precision in an ADC anyway, so we dont need to worry about the input.
-    #input device should be 16 bits, 44100 or 48000. 48000 is a tiny bit slower to process- 
-    #set the floor in variance from 44100 to 48000, and set the max_iterations down to 100~120.
-    #OTOH if I could vectorize this
+    #input device should be 16 bits, 44100.
 
 
     def __init__(self, processing_size=88200, sample_rate=44100, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
