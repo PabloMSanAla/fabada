@@ -35,7 +35,7 @@ in your windows settings for default mic and speaker, respectively, this program
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
 https://vb-audio.com/Cable/ is an example of a free audio cable.
-The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
+The program expects 48000hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
 
 """
 import numpy
@@ -173,18 +173,18 @@ def power(data:[float],posterior_mean: [float],data_variance: [float]):
     z =  numpy.sum(numpy.power(numpy.abs(x) , numpy.divide(2, data_variance)))
     return z
 
-def numba_fabada(self,data: [float]):
+def numba_fabada(data: [float]):
+        numpy.seterr(divide='ignore', invalid='ignore')
+
         bayesian_weight = numpy.zeros_like(data)
         bayesian_model = numpy.zeros_like(data)
-        max_iter: int = 200  # more than this and the computer starts to complain?
-        #todo: optimize number of cycles
-        # Must strip all non-essential components from this function to make it work as fast as possible
+        max_iter: int = 165
+
         #numba doesn't like unions, arbitrary logic, so for fabada to work on 2x the parent thread needs to call
         #a different function, and internally a different means and variance calculation function.
         #This work is beyond the scope of this author
 
         # data_variance = numpy.array(data_variance / 1.0)
-        print(data)
         data_variance = variance(data)
 
 
@@ -296,6 +296,107 @@ def numba_fabada(self,data: [float]):
 
         return bayes  # this will either return zeros or the desired data
 
+'''
+This is an example of a threaded implementation. However, it does not actually achieve a speedup,
+because python threads are bound to the same core. An adapation of this to a multi-processing design would speed things up.
+
+class fabachannelrunright(Thread):
+    def __init__(self,work,results, done):
+        super(fabachannelrunright, self).__init__()
+        self.work = work
+        self.results = results
+        self.done = done
+        self.running = True
+
+    def run(self):
+        while self.running:
+            if(self.done == False):
+                self.results = numba_fabada(self.work)
+                self.done = True
+            time.sleep(0.001)
+
+
+    def stop(self):
+        self.running = False
+
+class fabachannelrunleft(Thread):
+    def __init__(self,work,results, done):
+        super(fabachannelrunleft, self).__init__()
+        self.work = work
+        self.results = results
+        self.done = done
+        self.running = True
+
+    def run(self):
+        while self.running:
+            if(self.done == False):
+                self.results = numba_fabada(self.work)
+                self.done = True
+            time.sleep(0.001)
+
+
+    def stop(self):
+        self.running = False
+
+
+This is an example of a threaded class.
+class FilterRun(Thread):
+    def __init__(self,rb,pb,channels,processing_size,dtype):
+        super(FilterRun, self).__init__()
+        self.running = True
+        self.rb = rb
+        self.processedrb = pb
+        self.channels = channels
+        self.processing_size = processing_size
+        self.dtype = dtype
+        self.buffer = numpy.ndarray(dtype=self.dtype, shape=[int(self.processing_size * self.channels)])
+        self.buffer = self.buffer.reshape(-1,self.channels)
+        self.lresults = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size)])
+        self.rresults = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size)])
+        self.buffer = numpy.ndarray(dtype=self.dtype, shape=[int(self.processing_size * self.channels)])
+        self.buffer = self.buffer.reshape(-1, self.channels)
+        self.lwork = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size)])
+        self.rwork = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size)])
+        self.ldone = False
+        self.rdone = False
+        self.fabachannelrunleft = fabachannelrunleft(self.lwork, self.lresults, self.ldone)
+        self.fabachannelrunright = fabachannelrunright(self.rwork, self.rresults, self.rdone)
+        self.fabachannelrunleft.start()
+        self.fabachannelrunright.start()
+        self.t = 0
+
+
+
+
+    def write_filtered_data(self):
+        if(self.fabachannelrunleft.done == True and self.fabachannelrunright.done == True):
+            self.x = time.time()
+            print("threaded fabada took", ((self.t - self.x) * 1000) , "ms")
+            self.buffer[:, 1] = self.fabachannelrunleft.results
+            self.buffer[:, 0] = self.fabachannelrunright.results
+            self.processedrb.write(self.buffer, error=False)
+            audio = self.rb.read(self.processing_size).astype(numpy.float64)
+            self.fabachannelrunleft.work = audio[:, 1]
+            self.fabachannelrunright.work = audio[:, 0]
+            self.fabachannelrunleft.done = False
+            self.fabachannelrunright.done = False
+            self.t = time.time()
+
+
+
+    def run(self):
+
+        while self.running:
+            if len(self.rb) < self.processing_size * 2:
+                time.sleep(0.001)
+            else:
+                self.write_filtered_data()
+
+
+    def stop(self):
+        self.running = False
+ '''
+
 class FilterRun(Thread):
     def __init__(self,rb,pb,channels,processing_size,dtype):
         super(FilterRun, self).__init__()
@@ -315,7 +416,7 @@ class FilterRun(Thread):
             # it takes between 600ms and 450ms to run this code.
             #it has been optimized as much as possible.
             #nothing further can be done to optimize this python
-            self.buffer[:, i]  = self.filter.numba_fabada(audio[:, i])
+            self.buffer[:, i]  = numba_fabada(audio[:, i])
         self.processedrb.write(self.buffer,error=False)
         #x = time.time()
         #print("if this number is less than 2,000, fabada is realtime. Otherwise reduce max_iterations: fabada took ", (x - t)*1000, " ms")
