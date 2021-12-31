@@ -35,7 +35,8 @@ in your windows settings for default mic and speaker, respectively, this program
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
 https://vb-audio.com/Cable/ is an example of a free audio cable.
-The program expects 48000hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
+The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
+It is also possible to set it for 48000, but it works a tiny bit slower.
 
 """
 import numpy
