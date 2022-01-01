@@ -193,17 +193,14 @@ def numba_fabada(data: [numpy.float64]):
 
         # data_variance = numpy.array(data_variance / 1.0)
         min_d: numpy.float64= numpy.min(data)
-        min_x = abs(min_d/1024)
         max_d: numpy.float64= numpy.ptp(data)
         min: numpy.float64 = SMALLEST_NUMBER_LARGER_THAN_ZERO_FLOAT_DIVIDABLE
         max: numpy.float64 = 1024.0
-        #todo: the min and the max are arbitrary and not necessarily correct.
+        min_x = abs(min_d/max)
+        #todo: the min_x(variance floor) and the max are arbitrary and not necessarily correct.
         #normalize the datum
         data: [numpy.float64] =  interpolate(data, min_d, max_d,min, max)
         data_variance: [numpy.float64] = variance(data,min_x)
-
-
-
 
         # initialize bayes for the function return
 
