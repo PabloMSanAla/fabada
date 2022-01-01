@@ -35,10 +35,7 @@ in your windows settings for default mic and speaker, respectively, this program
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
 https://vb-audio.com/Cable/ is an example of a free audio cable.
-The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
-just set the sample rate to whatever you want to use.
-
-Note: this code does not work correctly. Full stop.
+The program expects 48000hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
 
 """
 import numpy
@@ -49,12 +46,11 @@ from threading import Thread
 import math
 import time
 
-
+TAU: numpy.float64 = 2 * numpy.pi
 
 
 @numba.jit ((numba.float64)(numba.float64[:]))
-def signaltonoise_dB(data: [float]):
-        data = data / 1.0
+def signaltonoise_dB(data: [numpy.float64]):
         m = data.mean()
         sd = data.std()
         if sd == 0:
@@ -65,32 +61,29 @@ def signaltonoise_dB(data: [float]):
         return 20*numpy.log10(xd)
 
 @numba.jit (numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]))
-def evaluate(prior_mean: [float],data: [float],prior_variance: float,data_variance: float):
-        x = numpy.exp(-((prior_mean - data) ** 2) / (2 * (prior_variance + data_variance))) / numpy.sqrt(
-            2 * numpy.pi * (prior_variance + data_variance))
-        return x
+def evaluate(prior_mean: [numpy.float64],data: [numpy.float64],prior_variance: numpy.float64,data_variance: numpy.float64):
+        return numpy.exp(-((prior_mean - data) ** 2) / (2 * (prior_variance + data_variance))) / numpy.sqrt( TAU * (prior_variance + data_variance))
 
+
+#evidence = Evidence(0, numpy.sqrt(data_variance), 0, data_variance)
 #Evidence(prior_mean, data, prior_variance, data_variance)
 #properly specifying numba signature fixes this
 @numba.jit (numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]))
-def Evidence(mu1: [float], mu2: [float], var1: [float], var2: [float]):
-    return numpy.exp(-((mu1 - mu2) ** 2) / (2 * (var1 + var2))) / numpy.sqrt(
-        2 * numpy.pi * (var1 + var2)
-    )
+def Evidence(mu1: [numpy.float64], mu2: [numpy.float64], var1: [numpy.float64], var2: [numpy.float64]):
+    return numpy.exp(-((mu1 - mu2) ** 2) / (2 * (var1 + var2))) / numpy.sqrt( TAU * (var1 + var2))
 
 
+#first time this function is called, it's unfortunantly called with 0.0, which is not useful here
 @numba.jit (numba.float64[:](numba.float64[:]))
-def Evidence1st(var2: [float]):
-    return numpy.exp(-((0.0 - numpy.sqrt(var2)) ** 2) / (2 * (0.0 + var2))) / numpy.sqrt(
-        2 * numpy.pi * (0.0 + var2)
-    )
+def Evidence1st(var2: [numpy.float64]):
+    return numpy.exp(-((0.0 - numpy.sqrt(var2)) ** 2) / (2 * (0.0 + var2))) / numpy.sqrt(2 * numpy.pi * (0.0 + var2))
 
 
 #
 #prespecifying the nuba types fixed this tremendously, it no longer takes 3000 milliseconds the first time it runs
 @numba.jit((numba.float64[:])(numba.float64[:]))
-def meanx1(data: [float]):
-    meanx = data / 1.0
+def meanx1(data: [numpy.float64]):
+    meanx:[numpy.float64] = data / 1.0
     meanx[:-1] += data[1:]
     meanx[1:] += data[:-1]
     meanx[1:-1] /= 3
@@ -100,8 +93,8 @@ def meanx1(data: [float]):
     #simple, easy, 1-dimensional function
 
 @numba.jit#((numba.float64[::])(numba.float64[::]))
-def meanx2(data:[float]):
-    mean = data / 1.0
+def meanx2(data:[numpy.float64]):
+    mean:[numpy.float64] = data / 1.0
     mean[:-1, :] += data[1:, :]
     mean[1:, :] += data[:-1, :]
     mean[:, :-1] += data[:, 1:]
@@ -119,20 +112,20 @@ def meanx2(data:[float]):
 
 
 @numba.jit(numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]))
-def posterior_mean_gen(prior_mean: [float],prior_variance: [float],data: [float],data_variance: [float],posterior_variance: [float]):
+def posterior_mean_gen(prior_mean: [numpy.float64],prior_variance: [numpy.float64],data: [numpy.float64],data_variance: [numpy.float64],posterior_variance: [numpy.float64]):
     return ( prior_mean / prior_variance + data / data_variance ) * posterior_variance
 
 @numba.jit(numba.float64(numba.float64))
-def chi2_pdf_call(x: float):
-    df = 5 #note: this isnt the right way to use this function. DF is supposed to be, like data.size but that would be enormous
+def chi2_pdf_call(x: numpy.float64):
+    df: int = 28 #note: this isnt the right way to use this function. DF is supposed to be, like data.size but that would be enormous
     ## chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
-    gammar = (2. * math.lgamma(df / 2.))
-    gammaz = ((df / 2.) - 1.)
-    gamman = (x / 2)
-    gammas = (numpy.sign(gamman) * ((numpy.abs(gamman)) ** gammaz)) #raising this to the powa will just result in FUBAR
-    gammaq =  numpy.exp(-x / 2)
-    gammaa =  1. / gammar
-    pdf = gammaa * gammas * gammaq
+    gammar: numpy.float64 = (2. * math.lgamma(df / 2.))
+    gammaz: numpy.float64 = ((df / 2.) - 1.)
+    gamman: numpy.float64 = (x / 2.)
+    gammas: numpy.float64 = (numpy.sign(gamman) * ((numpy.abs(gamman)) ** gammaz)) #raising this to the powa will just result in FUBAR
+    gammaq: numpy.float64 =  numpy.exp(-x / 2.)
+    gammaa: numpy.float64 =  1. / gammar
+    pdf: numpy.float64 = gammaa * gammas * gammaq
     return pdf
     #this is the correct, optimized chi2_pdf function call. There is nothing wrong in this code.
     #This code returns the exact equivalent of calling scipy.stats.chi2.pdf(x,df)
@@ -142,9 +135,11 @@ def chi2_pdf_call(x: float):
     #gammaln      -- Logarithm of the absolute value of the Gamma function for real inputs. same thing as math.lgamma. https://github.com/scipy/scipy/blob/701ffcc8a6f04509d115aac5e5681c538b5265a2/scipy/special/cephes/gamma.c
 
 
+
+
 @numba.jit((numba.float64[:])( numba.float64[:]))
-def nan(data: [float]):
-    return numpy.asarray([x if not math.isnan(x) else 0.0 for x in data])
+def nan(data: [numpy.float64]):
+    return numpy.asarray([x if not math.isnan(x) else 0.0 for x in data],dtype=numpy.float64)
 
 @numba.jit(numba.int16( numba.int16,numba.int16,numba.int16))
 def bound(value: int, low: int = 20, high: int =100):
@@ -152,39 +147,39 @@ def bound(value: int, low: int = 20, high: int =100):
      return (((value - low) % diff) + low)
 
 @numba.jit((numba.float64[:])( numba.float64[:]))
-def variance(data: [float]):
+def variance(data: [numpy.float64]):
 
     #note: nothing in this function is set in stone or even good.
     #the contents of this function determine how fabada sees the need for convolution.
     #i guess. i dont really know. But this is the source of the clicking, the dropped samples, etc.
     #the only time fabada will work for this particular application is when we get this right.
-    data_mean = abs(numpy.median(data))* numpy.ones_like(data)  # get the mean
+    data_mean = abs(numpy.median(data))* numpy.ones_like(data,dtype=numpy.float64)  # get the mean
     # The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
-    data_variance = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data)])
-    data_variance = data_variance + 200 # bring le floor up- whatever this is truncates higher frequency data.
+    data_variance: [numpy.float64] = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data)])
+    data_variance = data_variance + 1024.0 # bring le floor up- whatever this is truncates higher frequency data.
     #64 seems good, 92 seems strong enough
     #if we bring this up by 0, the output is extremely noisy.
-    data_variance = (data_variance **2) #exponentiate
+    data_variance= (data_variance ** 2 ) #exponentiate
     return data_variance
 
 @numba.jit((numba.float64[:])( numba.float64[:],numba.float64,numba.float64, numba.float64,numba.float64))
-def interpolate(data:[float],min_d: float,max_d: float,zoop: float,zoo: float):
+def interpolate(data:[numpy.float64],min_d: numpy.float64,max_d: numpy.float64,zoop: numpy.float64,zoo: numpy.float64):
     return numpy.interp(data, (min_d, max_d), (zoop, zoo))
 
 @numba.jit((numba.float64)( numba.float64[:],numba.float64[:],numba.float64[:]))
-def power(data:[float],posterior_mean: [float],data_variance: [float]):
+def power(data:[numpy.float64],posterior_mean: [numpy.float64],data_variance: [numpy.float64]):
     #twos = 2.0 * numpy.ones_like(data)
     return numpy.sum((data - posterior_mean) ** 2 / data_variance)
 
 @numba.jit(numba.float64[:](numba.float64[:],numba.float64[:]))
-def postisum(prior_variance : [float],data_variance: [float]):
-    return 1 / (1 / prior_variance + 1 / data_variance)
+def postisum(prior_variance : [numpy.float64],data_variance: [numpy.float64]):
+    return 1.0 / (1.0 / prior_variance + 1.0 / data_variance)
 
-def numba_fabada(data: [float]):
-        bayesian_weight = numpy.zeros_like(data)
-        bayesian_model = numpy.zeros_like(data)
-        ones = numpy.ones_like(data)
-        max_iter: int = 100
+def numba_fabada(data: [numpy.float64]):
+        start = time.time()
+        bayesian_weight: [numpy.float64] = numpy.zeros_like(data)
+        bayesian_model:  [numpy.float64] = numpy.zeros_like(data)
+        max_iter: int = 3000
         #this has to run as much as possible, but unfortunantly, it takes a looong time to run on this much data.
 
         #numba doesn't like unions, arbitrary logic, so for fabada to work on 2x the parent thread needs to call
@@ -192,14 +187,14 @@ def numba_fabada(data: [float]):
         #This work is beyond the scope of this author
 
         # data_variance = numpy.array(data_variance / 1.0)
-
-        min_d = numpy.min(data)
-        max_d = numpy.ptp(data)
+        min_d: numpy.float64= numpy.min(data)
+        max_d: numpy.float64= numpy.ptp(data)
+        min: numpy.float64 = 0.0
+        max: numpy.float64 = 255.0
         #normalize the datum
-        data =  interpolate(data, min_d, max_d, 0., +255.)
+        data: [numpy.float64] =  interpolate(data, min_d, max_d,min, max)
 
-
-        data_variance = variance(data)
+        data_variance: [numpy.float64] = variance(data)
 
 
 
@@ -208,112 +203,113 @@ def numba_fabada(data: [float]):
 
         # INITIALIZING ALGORITMH ITERATION ZERO
 
-        posterior_mean = data
-        posterior_variance = data_variance
+        posterior_mean: [numpy.float64] = data
+        posterior_variance: [numpy.float64] = data_variance
 
-        evidence = Evidence1st(data_variance)
-        initial_evidence = evidence
-        iteration = 0
-        chi2_pdf = 0.0
-        chi2_pdf_derivative = 0.0
+        evidence: [numpy.float64] = Evidence1st(data_variance)
+        initial_evidence: [numpy.float64] = evidence
+        iteration: int = 0.0
+        chi2_pdf: numpy.float64 = 0.0
+        chi2_pdf_derivative: numpy.float64 = 0.0
 
         # converged = False
         iteration += 1  # set  number of iterations done
 
-        chi2_pdf_previous = chi2_pdf
+        chi2_pdf_previous: numpy.float64 = chi2_pdf
         chi2_pdf_derivative_previous = chi2_pdf_derivative
-        evidence_previous = numpy.mean(evidence)
-
-        iteration += 1  # Check number of iterartions done
+        evidence_previous: [numpy.float64] = numpy.mean(evidence)
 
         # GENERATES PRIORS
 
-        prior_mean = meanx1(posterior_mean)
+        prior_mean: [numpy.float64] = meanx1(posterior_mean)
 
-        prior_variance = posterior_variance
+        prior_variance: [numpy.float64] = posterior_variance
 
         # APPLIY BAYES' THEOREM
 
-        posterior_variance =  postisum(prior_variance,data_variance)
-        posterior_mean = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
+        posterior_variance: [numpy.float64] =  postisum(prior_variance,data_variance)
+        posterior_mean: [numpy.float64] = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
         # EVALUATE EVIDENCE
-        evidence = Evidence(prior_mean, data, prior_variance, data_variance)
-        evidence_derivative = numpy.subtract(numpy.mean(evidence), evidence_previous)
+        evidence: [numpy.float64] = Evidence(prior_mean, data, prior_variance, data_variance)
+        evidence_derivative: [numpy.float64] = numpy.subtract(numpy.mean(evidence), evidence_previous)
 
         # EVALUATE CHI2
         #numpy does not allow fractional powers of negative numbers!
 
         chi2_data = power(data, posterior_mean,data_variance)
-        chi2_pdf = chi2_pdf_call(chi2_data)
+        chi2_pdf: numpy.float64 = chi2_pdf_call(chi2_data)
         chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
         chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
 
         # COMBINE MODELS FOR THE ESTIMATION
-        model_weight = numpy.multiply(evidence, chi2_data)
-        bayesian_weight = numpy.add(bayesian_weight, model_weight)
-        bayesian_model = numpy.add(bayesian_model, numpy.multiply(model_weight, posterior_mean))
+        model_weight: [numpy.float64] = numpy.multiply(evidence, chi2_data)
+        bayesian_weight: [numpy.float64] = numpy.add(bayesian_weight, model_weight)
+        bayesian_model: [numpy.float64] = numpy.add(bayesian_model, numpy.multiply(model_weight, posterior_mean))
 
-        chi2_data_min = chi2_data
+        chi2_data_min: numpy.float64 = chi2_data
 
         while 1:
-
+            current = time.time()
+            timerun = (current - start) * 1000
             if (
-                    (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
+                    (int(chi2_data) > data.size and chi2_pdf_snd_derivative >= 0)
                     or (evidence_derivative < 0)
                     or (iteration > max_iter)
+                    or (timerun > 900)#use no more than 90% of the time allocated per cycle
 
             ):
-
                 break
                 # break the loop when we're done by prematurely setting converged and returning
                 # this allows us to test if one round of convergence is enough.
             # else:# the else here is redundant, as we either do or dont do, continue resets the while
             # and break terminates. While 1 is the fastest we can operate in this mode
 
-            chi2_pdf_previous = chi2_pdf
-            chi2_pdf_derivative_previous = chi2_pdf_derivative
-            evidence_previous = numpy.mean(evidence)
+            chi2_pdf_previous: numpy.float64 = chi2_pdf
+            chi2_pdf_derivative_previous: numpy.float64 = chi2_pdf_derivative
+            evidence_previous: [numpy.float64] = numpy.mean(evidence,dtype=numpy.float64)
 
             iteration += 1  # Check number of iterartions done
 
             # GENERATES PRIORS
-            prior_mean = meanx1(posterior_mean)
+            prior_mean: [numpy.float64] = meanx1(posterior_mean)
             # if(posterior_mean.ndim == 2):
             #    prior_mean = meanx2(posterior_mean)
-            prior_variance = posterior_variance
+            prior_variance: [numpy.float64] = posterior_variance
 
             # APPLIY BAYES' THEOREM
             # prevent le' devide by le zeros
-            posterior_variance = postisum(prior_variance,data_variance)
+            posterior_variance: [numpy.float64] = postisum(prior_variance,data_variance)
 
-            posterior_mean = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
+            posterior_mean: [numpy.float64] = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
 
             # EVALUATE EVIDENCE
-            evidence = Evidence(prior_mean, data, prior_variance, data_variance)
-            evidence_derivative = numpy.subtract(numpy.mean(evidence), evidence_previous)
+            evidence: [numpy.float64] = Evidence(prior_mean, data, prior_variance, data_variance)
+            evidence_derivative: [numpy.float64] = numpy.subtract(numpy.mean(evidence), evidence_previous)
 
             # EVALUATE CHI2
-            chi2_data  = power(data, posterior_mean,data_variance)
+            chi2_data: [numpy.float64]  = power(data, posterior_mean,data_variance)
 
-            chi2_pdf = chi2_pdf_call(chi2_data)
-            chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
-            chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
+            chi2_pdf: numpy.float64 = chi2_pdf_call(chi2_data)
+            chi2_pdf_derivative: numpy.float64 = chi2_pdf - chi2_pdf_previous
+            chi2_pdf_snd_derivative: numpy.float64 = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
             # COMBINE MODELS FOR THE ESTIMATION
-            model_weight = numpy.multiply(evidence,chi2_data)
-            bayesian_weight = numpy.add(bayesian_weight, model_weight)
+            model_weight: [numpy.float64] = numpy.multiply(evidence,chi2_data)
+            bayesian_weight: [numpy.float64] = numpy.add(bayesian_weight, model_weight)
 
-            bayesian_model = numpy.add(bayesian_model, numpy.multiply(model_weight,posterior_mean))
+            bayesian_model: [numpy.float64] = numpy.add(bayesian_model, numpy.multiply(model_weight,posterior_mean))
 
 
             # COMBINE ITERATION ZERO
-        model_weight = numpy.multiply(initial_evidence, chi2_data_min)
-        bayesian_weight = numpy.add(model_weight,bayesian_weight)
-        bayesian_model = numpy.add(bayesian_model, numpy.multiply(model_weight, data))
+        model_weight: [numpy.float64] = numpy.multiply(initial_evidence, chi2_data_min)
+        bayesian_weight: [numpy.float64] = numpy.add(model_weight,bayesian_weight)
+        bayesian_model: [numpy.float64] = numpy.add(bayesian_model, numpy.multiply(model_weight, data))
 
                 #de-normalize the datum
-        return interpolate(numpy.divide(bayesian_model,bayesian_weight),0., +255., min_d, +max_d)
+        output: [numpy.float64] =  interpolate(numpy.divide(bayesian_model,bayesian_weight),min, max, min_d, +max_d)
+        return output
+
 
 class FilterRun(Thread):
     def __init__(self,rb,pb,channels,processing_size,dtype):
@@ -328,14 +324,10 @@ class FilterRun(Thread):
         self.buffer = self.buffer.reshape(-1,self.channels)
 
     def write_filtered_data(self):
-        #t = time.time()
-        audio = self.rb.read(self.processing_size).astype(numpy.float64)
+        audio = self.rb.read(self.processing_size).astype(dtype=numpy.float64)
         for i in range(self.channels):
             self.buffer[:, i]  = numba_fabada(audio[:, i])
-
         self.processedrb.write(self.buffer.astype(dtype=self.dtype),error=True)
-        #x = time.time()
-        #print("if this number is less than 2,000, fabada is realtime. Otherwise reduce max_iterations: fabada took ", (x - t)*1000, " ms")
 
     def run(self):
         while self.running:
@@ -378,10 +370,11 @@ class StreamSampler(object):
             pass
         return cls.dtype_to_paformat[dtype.name]
 
+
     def __init__(self, sample_rate=44100, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
-                 micindex=1, speakerindex=1, dtype=numpy.float32):
+                 micindex=1, speakerindex=1, dtype=numpy.int32):
         self.pa = pyaudio.PyAudio()
-        self._processing_size = sample_rate
+        self._processing_size = int(sample_rate * 2)
         # np_rw_buffer (AudioFramingBuffer offers a delay time)
         self._sample_rate = sample_rate
         self._channels = channels
@@ -393,7 +386,7 @@ class StreamSampler(object):
 
         self.processedrb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
                                      seconds=6,  # Buffer size (need larger than processing size)[seconds * sample_rate]
-                                     buffer_delay=2, # as long as fabada completes in O(n) of less than the sample size in time
+                                     buffer_delay=1, # as long as fabada completes in O(n) of less than the sample size in time
                                      dtype=numpy.dtype(dtype))
 
         self.filterthread = FilterRun(self.rb,self.processedrb,self._channels,self._processing_size,self.dtype)
