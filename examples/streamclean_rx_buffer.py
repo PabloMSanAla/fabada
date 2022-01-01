@@ -35,8 +35,7 @@ in your windows settings for default mic and speaker, respectively, this program
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
 https://vb-audio.com/Cable/ is an example of a free audio cable.
-The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
-It is also possible to set it for 48000, but it works a tiny bit slower.
+The program expects 48000hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
 
 """
 import numpy
@@ -47,6 +46,7 @@ from threading import Thread
 import concurrent.futures
 import math
 import time
+import sys
 
 
 
@@ -121,16 +121,16 @@ def meanx2(data:[float]):
 def posterior_mean_gen(prior_mean: [float],prior_variance: [float],data: [float],data_variance: [float],posterior_variance: [float]):
     return ( prior_mean / prior_variance + data / data_variance ) * posterior_variance
 
-@numba.jit(numba.float64(numba.float64,numba.int32))
-def chi2_pdf_call(x: float ,df: int):
+@numba.jit(numba.float64(numba.float64))
+def chi2_pdf_call(x: float):
+    df = 5 #note: this isnt the right way to use this function. DF is supposed to be, like data.size but that would be enormous
     ## chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
     gammar = (2. * math.lgamma(df / 2.))
     gammaz = ((df / 2.) - 1.)
     gamman = (x / 2)
-    gammas = (numpy.sign(gamman) * ((numpy.abs(gamman)) * gammaz)) #raising this to the powa will just result in FUBAR
+    gammas = (numpy.sign(gamman) * ((numpy.abs(gamman)) ** gammaz)) #raising this to the powa will just result in FUBAR
     gammaq =  numpy.exp(-x / 2)
     gammaa =  1. / gammar
-
     pdf = gammaa * gammas * gammaq
     return pdf
     #this is the correct, optimized chi2_pdf function call. There is nothing wrong in this code.
@@ -163,30 +163,42 @@ def variance(data: [float]):
     data_mean = abs(numpy.median(data))* numpy.ones_like(data)  # get the mean
     # The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
     data_variance = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data)])
-    data_variance = data_variance + 44100 # bring le floor up- at most I have used 4096 here with success. However, it makes the signal weaker
+    data_variance = data_variance + 4096 # bring le floor up- at most I have used 4096 here with success. However, it makes the signal weaker
     #if we bring this up by 0, the output is extremely noisy.
     data_variance = (data_variance ** 2) #exponentiate
     return data_variance
 
+@numba.jit
+def nan_ptp(a):
+    return numpy.ptp(a[numpy.isfinite(a)])
+
 @numba.jit((numba.float64)( numba.float64[:],numba.float64[:],numba.float64[:]))
 def power(data:[float],posterior_mean: [float],data_variance: [float]):
-    x = numpy.subtract(data, posterior_mean)
-    z =  numpy.sum(numpy.power(numpy.abs(x) , numpy.divide(2, data_variance)))
-    return z
+    return numpy.sum((data - posterior_mean) ** 2 / data_variance)
 
 def numba_fabada(data: [float]):
-        numpy.seterr(divide='ignore', invalid='ignore')
 
         bayesian_weight = numpy.zeros_like(data)
         bayesian_model = numpy.zeros_like(data)
-        max_iter: int = 165
+        ones = numpy.ones_like(data)
+
+        max_iter: int = 256
 
         #numba doesn't like unions, arbitrary logic, so for fabada to work on 2x the parent thread needs to call
         #a different function, and internally a different means and variance calculation function.
         #This work is beyond the scope of this author
 
         # data_variance = numpy.array(data_variance / 1.0)
+
+        min_d = numpy.min(data)
+        max_d = nan_ptp(data)
+        #normalize the datum
+        data =  numpy.interp(data, (min_d, max_d), (0, +255))
+
+
         data_variance = variance(data)
+
+
 
 
         # initialize bayes for the function return
@@ -219,7 +231,7 @@ def numba_fabada(data: [float]):
 
         # APPLIY BAYES' THEOREM
 
-        posterior_variance = numpy.divide(1, numpy.add(numpy.divide(1,prior_variance),numpy.divide(1,data_variance)))
+        posterior_variance =   numpy.divide(ones, (numpy.add((numpy.divide(ones,prior_variance)),(numpy.divide(ones,data_variance)))))
         posterior_mean = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
         # EVALUATE EVIDENCE
         evidence = Evidence(prior_mean, data, prior_variance, data_variance)
@@ -229,7 +241,7 @@ def numba_fabada(data: [float]):
         #numpy does not allow fractional powers of negative numbers!
 
         chi2_data = power(data, posterior_mean,data_variance)
-        chi2_pdf = chi2_pdf_call(chi2_data, data.size)
+        chi2_pdf = chi2_pdf_call(chi2_data)
         chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
         chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
@@ -244,12 +256,14 @@ def numba_fabada(data: [float]):
         while 1:
 
             if (
-                    ((chi2_data) > (data.size) and chi2_pdf_snd_derivative >= 0)
+                    (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
                     or (evidence_derivative < 0)
                     or (iteration > max_iter)
 
             ):
-                break  # break the loop when we're done by prematurely setting converged and returning
+
+                break
+                # break the loop when we're done by prematurely setting converged and returning
                 # this allows us to test if one round of convergence is enough.
             # else:# the else here is redundant, as we either do or dont do, continue resets the while
             # and break terminates. While 1 is the fastest we can operate in this mode
@@ -268,8 +282,8 @@ def numba_fabada(data: [float]):
 
             # APPLIY BAYES' THEOREM
             # prevent le' devide by le zeros
+            posterior_variance = numpy.divide(ones, (numpy.add((numpy.divide(ones,prior_variance)),(numpy.divide(ones,data_variance)))))
 
-            posterior_variance = numpy.divide(1, numpy.add(numpy.divide(1, prior_variance),numpy.divide(1, data_variance)))
             posterior_mean = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
 
             # EVALUATE EVIDENCE
@@ -279,23 +293,24 @@ def numba_fabada(data: [float]):
             # EVALUATE CHI2
             chi2_data  = power(data, posterior_mean,data_variance)
 
-            chi2_pdf = chi2_pdf_call(chi2_data, data.size)
+            chi2_pdf = chi2_pdf_call(chi2_data)
             chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
             chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
             # COMBINE MODELS FOR THE ESTIMATION
             model_weight = numpy.multiply(evidence,chi2_data)
             bayesian_weight = numpy.add(bayesian_weight, model_weight)
+
             bayesian_model = numpy.add(bayesian_model, numpy.multiply(model_weight,posterior_mean))
+
 
             # COMBINE ITERATION ZERO
         model_weight = numpy.multiply(initial_evidence, chi2_data_min)
         bayesian_weight = numpy.add(model_weight,bayesian_weight)
         bayesian_model = numpy.add(bayesian_model, numpy.multiply(model_weight, data))
 
-        bayes = numpy.divide(bayesian_model,bayesian_weight)
-
-        return bayes  # this will either return zeros or the desired data
+                #de-normalize the datum
+        return    numpy.interp(numpy.divide(bayesian_model,bayesian_weight), (0, +255), (min_d, +max_d))
 
 '''
 This is an example of a threaded implementation. However, it does not actually achieve a speedup,
@@ -407,18 +422,16 @@ class FilterRun(Thread):
         self.channels = channels
         self.processing_size = processing_size
         self.dtype = dtype
-        self.buffer = numpy.ndarray(dtype=self.dtype, shape=[int(self.processing_size * self.channels)])
+        self.buffer = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size * self.channels)])
         self.buffer = self.buffer.reshape(-1,self.channels)
 
     def write_filtered_data(self):
         #t = time.time()
         audio = self.rb.read(self.processing_size).astype(numpy.float64)
         for i in range(self.channels):
-            # it takes between 600ms and 450ms to run this code.
-            #it has been optimized as much as possible.
-            #nothing further can be done to optimize this python
             self.buffer[:, i]  = numba_fabada(audio[:, i])
-        self.processedrb.write(self.buffer,error=False)
+
+        self.processedrb.write(self.buffer.astype(dtype=self.dtype),error=True)
         #x = time.time()
         #print("if this number is less than 2,000, fabada is realtime. Otherwise reduce max_iterations: fabada took ", (x - t)*1000, " ms")
 
@@ -428,7 +441,6 @@ class FilterRun(Thread):
                 time.sleep(0.001)
             else:
                 self.write_filtered_data()
-                #time.sleep(0.01)
 
 
     def stop(self):
