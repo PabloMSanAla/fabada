@@ -176,8 +176,11 @@ def power(data:[numpy.float64],posterior_mean: [numpy.float64],data_variance: [n
 def postisum(prior_variance : [numpy.float64],data_variance: [numpy.float64]):
     return 1.0 / (1.0 / prior_variance + 1.0 / data_variance)
 
+@numba.jit(numba.float64[:](numba.float64[:]),nopython=True)
 def numba_fabada(data: [numpy.float64]):
-        start = time.time()
+        with numba.objmode(start=numba.float64):
+            start = time.time()
+
         bayesian_weight: [numpy.float64] = numpy.zeros_like(data)
         bayesian_model:  [numpy.float64] = numpy.zeros_like(data)
         max_iter: int = 3000
@@ -197,7 +200,6 @@ def numba_fabada(data: [numpy.float64]):
         #todo: the min and the max are arbitrary and not necessarily correct.
         #normalize the datum
         data: [numpy.float64] =  interpolate(data, min_d, max_d,min, max)
-        print(min_x)
         data_variance: [numpy.float64] = variance(data,min_x)
 
 
@@ -254,7 +256,8 @@ def numba_fabada(data: [numpy.float64]):
         chi2_data_min: numpy.float64 = chi2_data
 
         while 1:
-            current = time.time()
+            with numba.objmode(current=numba.float64):
+                current = time.time()
             timerun = (current - start) * 1000
             if (
                     (int(chi2_data) > data.size and chi2_pdf_snd_derivative >= 0)
@@ -271,7 +274,7 @@ def numba_fabada(data: [numpy.float64]):
 
             chi2_pdf_previous: numpy.float64 = chi2_pdf
             chi2_pdf_derivative_previous: numpy.float64 = chi2_pdf_derivative
-            evidence_previous: [numpy.float64] = numpy.mean(evidence,dtype=numpy.float64)
+            evidence_previous: [numpy.float64] = numpy.mean(evidence)
 
             iteration += 1  # Check number of iterartions done
 
@@ -310,7 +313,6 @@ def numba_fabada(data: [numpy.float64]):
         bayesian_weight: [numpy.float64] = numpy.add(model_weight,bayesian_weight)
         bayesian_model: [numpy.float64] = numpy.add(bayesian_model, numpy.multiply(model_weight, data))
 
-                #de-normalize the datum
         return  interpolate(numpy.divide(bayesian_model,bayesian_weight),min, max, min_d, +max_d)
 
 
