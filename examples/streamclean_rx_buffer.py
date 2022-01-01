@@ -35,7 +35,8 @@ in your windows settings for default mic and speaker, respectively, this program
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
 https://vb-audio.com/Cable/ is an example of a free audio cable.
-The program expects 48000hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
+The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
+just set the sample rate to whatever you want to use.
 
 """
 import numpy
@@ -43,10 +44,8 @@ import pyaudio
 import numba
 from np_rw_buffer import AudioFramingBuffer
 from threading import Thread
-import concurrent.futures
 import math
 import time
-import sys
 
 
 
@@ -69,7 +68,6 @@ def evaluate(prior_mean: [float],data: [float],prior_variance: float,data_varian
             2 * numpy.pi * (prior_variance + data_variance))
         return x
 
-#evidence = Evidence(0, numpy.sqrt(data_variance), 0, data_variance)
 #Evidence(prior_mean, data, prior_variance, data_variance)
 #properly specifying numba signature fixes this
 @numba.jit (numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]))
@@ -78,12 +76,13 @@ def Evidence(mu1: [float], mu2: [float], var1: [float], var2: [float]):
         2 * numpy.pi * (var1 + var2)
     )
 
-#first time this function is called, it's unfortunantly called with 0.0, which is not useful here
-@numba.jit (numba.float64[:](numba.float64,numba.float64[:],numba.float64,numba.float64[:]))
-def Evidence1st(mu1: float, mu2: [float], var1: float, var2: [float]):
-    return numpy.exp(-((mu1 - mu2) ** 2) / (2 * (var1 + var2))) / numpy.sqrt(
-        2 * numpy.pi * (var1 + var2)
+
+@numba.jit (numba.float64[:](numba.float64[:]))
+def Evidence1st(var2: [float]):
+    return numpy.exp(-((0.0 - numpy.sqrt(var2)) ** 2) / (2 * (0.0 + var2))) / numpy.sqrt(
+        2 * numpy.pi * (0.0 + var2)
     )
+
 
 #
 #prespecifying the nuba types fixed this tremendously, it no longer takes 3000 milliseconds the first time it runs
@@ -141,8 +140,6 @@ def chi2_pdf_call(x: float):
     #gammaln      -- Logarithm of the absolute value of the Gamma function for real inputs. same thing as math.lgamma. https://github.com/scipy/scipy/blob/701ffcc8a6f04509d115aac5e5681c538b5265a2/scipy/special/cephes/gamma.c
 
 
-
-
 @numba.jit((numba.float64[:])( numba.float64[:]))
 def nan(data: [float]):
     return numpy.asarray([x if not math.isnan(x) else 0.0 for x in data])
@@ -159,30 +156,34 @@ def variance(data: [float]):
     #the contents of this function determine how fabada sees the need for convolution.
     #i guess. i dont really know. But this is the source of the clicking, the dropped samples, etc.
     #the only time fabada will work for this particular application is when we get this right.
-
     data_mean = abs(numpy.median(data))* numpy.ones_like(data)  # get the mean
     # The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
     data_variance = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data)])
-    data_variance = data_variance + 4096 # bring le floor up- at most I have used 4096 here with success. However, it makes the signal weaker
+    data_variance = data_variance + 200 # bring le floor up- whatever this is truncates higher frequency data.
+    #64 seems good, 92 seems strong enough
     #if we bring this up by 0, the output is extremely noisy.
-    data_variance = (data_variance ** 2) #exponentiate
+    data_variance = (data_variance **2) #exponentiate
     return data_variance
 
-@numba.jit
-def nan_ptp(a):
-    return numpy.ptp(a[numpy.isfinite(a)])
+@numba.jit((numba.float64[:])( numba.float64[:],numba.float64,numba.float64, numba.float64,numba.float64))
+def interpolate(data:[float],min_d: float,max_d: float,zoop: float,zoo: float):
+    return numpy.interp(data, (min_d, max_d), (zoop, zoo))
 
 @numba.jit((numba.float64)( numba.float64[:],numba.float64[:],numba.float64[:]))
 def power(data:[float],posterior_mean: [float],data_variance: [float]):
+    #twos = 2.0 * numpy.ones_like(data)
     return numpy.sum((data - posterior_mean) ** 2 / data_variance)
 
-def numba_fabada(data: [float]):
+@numba.jit(numba.float64[:](numba.float64[:],numba.float64[:]))
+def postisum(prior_variance : [float],data_variance: [float]):
+    return 1 / (1 / prior_variance + 1 / data_variance)
 
+def numba_fabada(data: [float]):
         bayesian_weight = numpy.zeros_like(data)
         bayesian_model = numpy.zeros_like(data)
         ones = numpy.ones_like(data)
-
-        max_iter: int = 256
+        max_iter: int = 100
+        #this has to run as much as possible, but unfortunantly, it takes a looong time to run on this much data.
 
         #numba doesn't like unions, arbitrary logic, so for fabada to work on 2x the parent thread needs to call
         #a different function, and internally a different means and variance calculation function.
@@ -191,9 +192,9 @@ def numba_fabada(data: [float]):
         # data_variance = numpy.array(data_variance / 1.0)
 
         min_d = numpy.min(data)
-        max_d = nan_ptp(data)
+        max_d = numpy.ptp(data[numpy.isfinite(data)])
         #normalize the datum
-        data =  numpy.interp(data, (min_d, max_d), (0, +255))
+        data =  interpolate(data, min_d, max_d, 0., +255.)
 
 
         data_variance = variance(data)
@@ -208,7 +209,7 @@ def numba_fabada(data: [float]):
         posterior_mean = data
         posterior_variance = data_variance
 
-        evidence = Evidence1st(0.0, numpy.sqrt(data_variance), 0.0, data_variance)
+        evidence = Evidence1st(data_variance)
         initial_evidence = evidence
         iteration = 0
         chi2_pdf = 0.0
@@ -231,11 +232,11 @@ def numba_fabada(data: [float]):
 
         # APPLIY BAYES' THEOREM
 
-        posterior_variance =   numpy.divide(ones, (numpy.add((numpy.divide(ones,prior_variance)),(numpy.divide(ones,data_variance)))))
+        posterior_variance =  postisum(prior_variance,data_variance)
         posterior_mean = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
         # EVALUATE EVIDENCE
         evidence = Evidence(prior_mean, data, prior_variance, data_variance)
-        evidence_derivative = numpy.mean(evidence) - evidence_previous
+        evidence_derivative = numpy.subtract(numpy.mean(evidence), evidence_previous)
 
         # EVALUATE CHI2
         #numpy does not allow fractional powers of negative numbers!
@@ -282,13 +283,13 @@ def numba_fabada(data: [float]):
 
             # APPLIY BAYES' THEOREM
             # prevent le' devide by le zeros
-            posterior_variance = numpy.divide(ones, (numpy.add((numpy.divide(ones,prior_variance)),(numpy.divide(ones,data_variance)))))
+            posterior_variance = postisum(prior_variance,data_variance)
 
             posterior_mean = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
 
             # EVALUATE EVIDENCE
             evidence = Evidence(prior_mean, data, prior_variance, data_variance)
-            evidence_derivative = numpy.mean(evidence) - evidence_previous
+            evidence_derivative = numpy.subtract(numpy.mean(evidence), evidence_previous)
 
             # EVALUATE CHI2
             chi2_data  = power(data, posterior_mean,data_variance)
@@ -310,108 +311,7 @@ def numba_fabada(data: [float]):
         bayesian_model = numpy.add(bayesian_model, numpy.multiply(model_weight, data))
 
                 #de-normalize the datum
-        return    numpy.interp(numpy.divide(bayesian_model,bayesian_weight), (0, +255), (min_d, +max_d))
-
-'''
-This is an example of a threaded implementation. However, it does not actually achieve a speedup,
-because python threads are bound to the same core. An adapation of this to a multi-processing design would speed things up.
-
-class fabachannelrunright(Thread):
-    def __init__(self,work,results, done):
-        super(fabachannelrunright, self).__init__()
-        self.work = work
-        self.results = results
-        self.done = done
-        self.running = True
-
-    def run(self):
-        while self.running:
-            if(self.done == False):
-                self.results = numba_fabada(self.work)
-                self.done = True
-            time.sleep(0.001)
-
-
-    def stop(self):
-        self.running = False
-
-class fabachannelrunleft(Thread):
-    def __init__(self,work,results, done):
-        super(fabachannelrunleft, self).__init__()
-        self.work = work
-        self.results = results
-        self.done = done
-        self.running = True
-
-    def run(self):
-        while self.running:
-            if(self.done == False):
-                self.results = numba_fabada(self.work)
-                self.done = True
-            time.sleep(0.001)
-
-
-    def stop(self):
-        self.running = False
-
-
-This is an example of a threaded class.
-class FilterRun(Thread):
-    def __init__(self,rb,pb,channels,processing_size,dtype):
-        super(FilterRun, self).__init__()
-        self.running = True
-        self.rb = rb
-        self.processedrb = pb
-        self.channels = channels
-        self.processing_size = processing_size
-        self.dtype = dtype
-        self.buffer = numpy.ndarray(dtype=self.dtype, shape=[int(self.processing_size * self.channels)])
-        self.buffer = self.buffer.reshape(-1,self.channels)
-        self.lresults = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size)])
-        self.rresults = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size)])
-        self.buffer = numpy.ndarray(dtype=self.dtype, shape=[int(self.processing_size * self.channels)])
-        self.buffer = self.buffer.reshape(-1, self.channels)
-        self.lwork = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size)])
-        self.rwork = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size)])
-        self.ldone = False
-        self.rdone = False
-        self.fabachannelrunleft = fabachannelrunleft(self.lwork, self.lresults, self.ldone)
-        self.fabachannelrunright = fabachannelrunright(self.rwork, self.rresults, self.rdone)
-        self.fabachannelrunleft.start()
-        self.fabachannelrunright.start()
-        self.t = 0
-
-
-
-
-    def write_filtered_data(self):
-        if(self.fabachannelrunleft.done == True and self.fabachannelrunright.done == True):
-            self.x = time.time()
-            print("threaded fabada took", ((self.t - self.x) * 1000) , "ms")
-            self.buffer[:, 1] = self.fabachannelrunleft.results
-            self.buffer[:, 0] = self.fabachannelrunright.results
-            self.processedrb.write(self.buffer, error=False)
-            audio = self.rb.read(self.processing_size).astype(numpy.float64)
-            self.fabachannelrunleft.work = audio[:, 1]
-            self.fabachannelrunright.work = audio[:, 0]
-            self.fabachannelrunleft.done = False
-            self.fabachannelrunright.done = False
-            self.t = time.time()
-
-
-
-    def run(self):
-
-        while self.running:
-            if len(self.rb) < self.processing_size * 2:
-                time.sleep(0.001)
-            else:
-                self.write_filtered_data()
-
-
-    def stop(self):
-        self.running = False
- '''
+        return    interpolate(numpy.divide(bayesian_model,bayesian_weight),0., +255., min_d, +max_d)
 
 class FilterRun(Thread):
     def __init__(self,rb,pb,channels,processing_size,dtype):
@@ -476,21 +376,10 @@ class StreamSampler(object):
             pass
         return cls.dtype_to_paformat[dtype.name]
 
-    #anything works actually but 96000 is the most smooth because we can sample the ENTIRE bandwidth at once
-    #wheras anything less than this will result in some minor clipping, hard to notice but it IS noticable
-    #coincidentally 96000 is also one full second of data
-    #how do we say that? 96000 frames = 96000 * 16bits -> do the math, it's 192kb
-    #Humans cannot hear more than 22,000hz, so sampling at 88200 for 44100 input actually works well also.
-    #also, we MUST decode at float32. Any precision lost in translation is immediately audible.
-    #By translating to float32, the approximation is _closer_ to the output , which at most can be float32
-    #There are rarely more than 16 bits of precision in an ADC anyway, so we dont need to worry about the input.
-    #input device should be 16 bits, 44100.
-
-
-    def __init__(self, processing_size=88200, sample_rate=44100, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
+    def __init__(self, sample_rate=44100, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
                  micindex=1, speakerindex=1, dtype=numpy.float32):
         self.pa = pyaudio.PyAudio()
-        self._processing_size = int(sample_rate * 2) #processing size MUSt exceed clipping
+        self._processing_size = sample_rate
         # np_rw_buffer (AudioFramingBuffer offers a delay time)
         self._sample_rate = sample_rate
         self._channels = channels
@@ -502,7 +391,7 @@ class StreamSampler(object):
 
         self.processedrb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
                                      seconds=6,  # Buffer size (need larger than processing size)[seconds * sample_rate]
-                                     buffer_delay=0, # as long as fabada completes in O(n) of less than the sample size in time
+                                     buffer_delay=2, # as long as fabada completes in O(n) of less than the sample size in time
                                      dtype=numpy.dtype(dtype))
 
         self.filterthread = FilterRun(self.rb,self.processedrb,self._channels,self._processing_size,self.dtype)
