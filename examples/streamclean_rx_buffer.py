@@ -38,6 +38,8 @@ https://vb-audio.com/Cable/ is an example of a free audio cable.
 The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
 just set the sample rate to whatever you want to use.
 
+Note: this code does not work correctly. Full stop.
+
 """
 import numpy
 import pyaudio
@@ -192,7 +194,7 @@ def numba_fabada(data: [float]):
         # data_variance = numpy.array(data_variance / 1.0)
 
         min_d = numpy.min(data)
-        max_d = numpy.ptp(data[numpy.isfinite(data)])
+        max_d = numpy.ptp(data)
         #normalize the datum
         data =  interpolate(data, min_d, max_d, 0., +255.)
 
@@ -311,7 +313,7 @@ def numba_fabada(data: [float]):
         bayesian_model = numpy.add(bayesian_model, numpy.multiply(model_weight, data))
 
                 #de-normalize the datum
-        return    interpolate(numpy.divide(bayesian_model,bayesian_weight),0., +255., min_d, +max_d)
+        return interpolate(numpy.divide(bayesian_model,bayesian_weight),0., +255., min_d, +max_d)
 
 class FilterRun(Thread):
     def __init__(self,rb,pb,channels,processing_size,dtype):
