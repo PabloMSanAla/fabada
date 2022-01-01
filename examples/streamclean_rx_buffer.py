@@ -47,6 +47,7 @@ import math
 import time
 
 TAU: numpy.float64 = 2 * numpy.pi
+SMALLEST_NUMBER_LARGER_THAN_ZERO_FLOAT_DIVIDABLE = numpy.finfo(numpy.float32).eps
 
 
 @numba.jit ((numba.float64)(numba.float64[:]))
@@ -146,17 +147,17 @@ def bound(value: int, low: int = 20, high: int =100):
      diff = high - low
      return (((value - low) % diff) + low)
 
-@numba.jit((numba.float64[:])( numba.float64[:]))
-def variance(data: [numpy.float64]):
+@numba.jit((numba.float64[:])( numba.float64[:], numba.float64))
+def variance(data: [numpy.float64], floor: numpy.float64):
 
     #note: nothing in this function is set in stone or even good.
     #the contents of this function determine how fabada sees the need for convolution.
     #i guess. i dont really know. But this is the source of the clicking, the dropped samples, etc.
     #the only time fabada will work for this particular application is when we get this right.
-    data_mean = abs(numpy.median(data))* numpy.ones_like(data,dtype=numpy.float64)  # get the mean
+    data_mean: [numpy.float64] = abs(numpy.median(data))* numpy.ones_like(data,dtype=numpy.float64)  # get the mean
     # The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
     data_variance: [numpy.float64] = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data)])
-    data_variance = data_variance + 1024.0 # bring le floor up- whatever this is truncates higher frequency data.
+    data_variance = data_variance + floor# bring le floor up- whatever this is truncates higher frequency data.
     #64 seems good, 92 seems strong enough
     #if we bring this up by 0, the output is extremely noisy.
     data_variance= (data_variance ** 2 ) #exponentiate
@@ -185,16 +186,19 @@ def numba_fabada(data: [numpy.float64]):
         #numba doesn't like unions, arbitrary logic, so for fabada to work on 2x the parent thread needs to call
         #a different function, and internally a different means and variance calculation function.
         #This work is beyond the scope of this author
+        #everything works faster if you optimize it by specifying types
 
         # data_variance = numpy.array(data_variance / 1.0)
         min_d: numpy.float64= numpy.min(data)
+        min_x = abs(min_d/1024)
         max_d: numpy.float64= numpy.ptp(data)
-        min: numpy.float64 = 0.0
-        max: numpy.float64 = 255.0
+        min: numpy.float64 = SMALLEST_NUMBER_LARGER_THAN_ZERO_FLOAT_DIVIDABLE
+        max: numpy.float64 = 1024.0
+        #todo: the min and the max are arbitrary and not necessarily correct.
         #normalize the datum
         data: [numpy.float64] =  interpolate(data, min_d, max_d,min, max)
-
-        data_variance: [numpy.float64] = variance(data)
+        print(min_x)
+        data_variance: [numpy.float64] = variance(data,min_x)
 
 
 
@@ -307,8 +311,7 @@ def numba_fabada(data: [numpy.float64]):
         bayesian_model: [numpy.float64] = numpy.add(bayesian_model, numpy.multiply(model_weight, data))
 
                 #de-normalize the datum
-        output: [numpy.float64] =  interpolate(numpy.divide(bayesian_model,bayesian_weight),min, max, min_d, +max_d)
-        return output
+        return  interpolate(numpy.divide(bayesian_model,bayesian_weight),min, max, min_d, +max_d)
 
 
 class FilterRun(Thread):
@@ -324,10 +327,13 @@ class FilterRun(Thread):
         self.buffer = self.buffer.reshape(-1,self.channels)
 
     def write_filtered_data(self):
+        t = time.time()
         audio = self.rb.read(self.processing_size).astype(dtype=numpy.float64)
         for i in range(self.channels):
             self.buffer[:, i]  = numba_fabada(audio[:, i])
         self.processedrb.write(self.buffer.astype(dtype=self.dtype),error=True)
+        x = time.time()
+        print((x - t)*1000)
 
     def run(self):
         while self.running:
