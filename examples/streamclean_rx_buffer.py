@@ -263,7 +263,7 @@ def numba_fabada(data: [numpy.float64]):
                     (int(chi2_data) > data.size and chi2_pdf_snd_derivative >= 0)
                     or (evidence_derivative < 0)
                     or (iteration > max_iter)
-                    or (timerun > 900)#use no more than 90% of the time allocated per cycle
+                    or (timerun > 950)#use no more than 95% of the time allocated per cycle
 
             ):
                 break
@@ -329,13 +329,13 @@ class FilterRun(Thread):
         self.buffer = self.buffer.reshape(-1,self.channels)
 
     def write_filtered_data(self):
-        t = time.time()
+        #t = time.time()
         audio = self.rb.read(self.processing_size).astype(dtype=numpy.float64)
         for i in range(self.channels):
             self.buffer[:, i]  = numba_fabada(audio[:, i])
         self.processedrb.write(self.buffer.astype(dtype=self.dtype),error=True)
-        x = time.time()
-        print((x - t)*1000)
+        #x = time.time()
+        #print((x - t)*1000)
 
     def run(self):
         while self.running:
