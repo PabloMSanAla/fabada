@@ -46,6 +46,9 @@ from threading import Thread
 import math
 import time
 
+
+
+
 TAU: numpy.float64 = 2 * numpy.pi
 SMALLEST_NUMBER_LARGER_THAN_ZERO_FLOAT_DIVIDABLE = numpy.finfo(numpy.float32).eps
 
@@ -69,7 +72,7 @@ def signaltonoise_dB(data: [numpy.float64]):
         xd = abs(xl)
         return 20*numpy.log10(xd)
 
-@numba.jit (numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]),parallel=True)
+@numba.jit (numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]),parallel=True,nogil=True,cache=True)
 def evaluate(prior_mean: [numpy.float64],data: [numpy.float64],prior_variance: numpy.float64,data_variance: numpy.float64):
         return numpy.exp(-((prior_mean - data) ** 2) / (2 * (prior_variance + data_variance))) / numpy.sqrt( TAU * (prior_variance + data_variance))
 
@@ -77,7 +80,7 @@ def evaluate(prior_mean: [numpy.float64],data: [numpy.float64],prior_variance: n
 #evidence = Evidence(0, numpy.sqrt(data_variance), 0, data_variance)
 #Evidence(prior_mean, data, prior_variance, data_variance)
 #properly specifying numba signature fixes this
-@numba.jit (numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]),nopython=True,parallel=True)
+@numba.jit (numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]),nopython=True,parallel=True,nogil=True,cache=True)
 def Evidence(mu1: [numpy.float64], mu2: [numpy.float64], var1: [numpy.float64], var2: [numpy.float64]):
     N = mu1.size
     ja1 = numpy.empty_like(mu1)
@@ -96,14 +99,14 @@ def Evidence(mu1: [numpy.float64], mu2: [numpy.float64], var1: [numpy.float64], 
     return ja1
 
 
-@numba.jit(numba.float64[:](numba.float64[:]),parallel=True)
+@numba.jit(numba.float64[:](numba.float64[:]),parallel=True,nogil=True,cache=True)
 def Evidence1st(var2: [numpy.float64]):
     return numpy.exp(-((0.0 - numpy.sqrt(var2)) ** 2) / (2.0 * (0.0 + var2))) / numpy.sqrt(TAU * (0.0 + var2))
 
 
 #
 #prespecifying the nuba types fixed this tremendously, it no longer takes 3000 milliseconds the first time it runs
-@numba.jit((numba.float64[:])(numba.float64[:]),parallel=True)
+@numba.jit((numba.float64[:])(numba.float64[:]),parallel=True,nogil=True,cache=True)
 def meanx1(data: [numpy.float64]):
     meanx:[numpy.float64] = data / 1.0
     meanx[:-1] += data[1:]
@@ -133,12 +136,12 @@ def meanx2(data:[numpy.float64]):
     return mean #simple, easy, 2-dimensional function
 
 
-@numba.jit(numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]),parallel=True)
+@numba.jit(numba.float64[:](numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:],numba.float64[:]),parallel=True,nogil=True,cache=True)
 def posterior_mean_gen(prior_mean: [numpy.float64],prior_variance: [numpy.float64],data: [numpy.float64],data_variance: [numpy.float64],posterior_variance: [numpy.float64]):
     return ( prior_mean / prior_variance + data / data_variance ) * posterior_variance
 
 
-@numba.jit(numba.float64(numba.float64))
+@numba.jit(numba.float64(numba.float64),nopython=True,nogil=True,cache=True)
 def chi2_pdf_call(x: numpy.float64):
     df: int = 128 #note: this isnt the right way to use this function. DF is supposed to be, like data.size but that would be enormous
     ## chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
@@ -165,38 +168,30 @@ def bound(value: int, low: int = 20, high: int = 100):
      diff = high - low
      return (((value - low) % diff) + low)
 
-@numba.jit((numba.float64[:])( numba.float64[:], numba.float64),parallel=True)
+@numba.jit((numba.float64[:])( numba.float64[:], numba.float64),parallel=True,nogil=True,cache=True)
 def variance(data: [numpy.float64], floor: numpy.float64):
-
-    #note: nothing in this function is set in stone or even good.
-    #the contents of this function determine how fabada sees the need for convolution.
-    #i guess. i dont really know. But this is the source of the clicking, the dropped samples, etc.
-    #the only time fabada will work for this particular application is when we get this right.
-    #data_variance = numpy.ones_like(data) + floor# bring le floor up- whatever this is truncates higher frequency data.
-    data1 = data + floor
-    data_mean: [numpy.float64] = abs(numpy.mean(data)) * numpy.ones_like(data,dtype=numpy.float64)  # get the mean
-    # The formula for standard deviation is the square root of the sum of squared differences from the mean divided by the size of the data set.
-    data_variance: [numpy.float64] = numpy.asarray([(abs(j - x)) for j, x in zip(data_mean,data1)])
-    #64 seems good, 92 seems strong enough
-    #if we bring this up by 0, the output is extremely noisy.
-    data_variance= (data_variance ** 2 ) #exponentiate
+    data_mean= numpy.mean(data)  # get the mean
+    data_variance = numpy.empty_like(data)
+    N = data.size
+    for i in numba.prange(N):
+        data_variance[i] = (abs(data_mean - (data[i]+floor)) **2)
     return data_variance
 
 @numba.jit((numba.float64[:])( numba.float64[:],numba.float64,numba.float64, numba.float64,numba.float64))
 def interpolate(data:[numpy.float64],min_d: numpy.float64,max_d: numpy.float64,zoop: numpy.float64,zoo: numpy.float64):
     return numpy.interp(data, (min_d, max_d), (zoop, zoo))
 
-@numba.jit((numba.float64)( numba.float64[:],numba.float64[:],numba.float64[:]),parallel=True)
+@numba.jit((numba.float64)( numba.float64[:],numba.float64[:],numba.float64[:]),parallel=True,nogil=True,cache=True)
 def power(data:[numpy.float64],posterior_mean: [numpy.float64],data_variance: [numpy.float64]):
     #twos = 2.0 * numpy.ones_like(data)
     return numpy.sum((data - posterior_mean) ** 2 / data_variance)
 
-@numba.jit(numba.float64[:](numba.float64[:],numba.float64[:]),parallel=True)
+@numba.jit(numba.float64[:](numba.float64[:],numba.float64[:]),parallel=True,nogil=True,cache=True)
 def postisum(prior_variance : [numpy.float64],data_variance: [numpy.float64]):
     return 1.0 / (1.0 / prior_variance + 1.0 / data_variance)
 
-@numba.jit(numba.float64[:](numba.float64[:],numba.int32),nopython=True,parallel=True)
-def numba_fabada(data: [numpy.float64],samplerate: numpy.int32):
+@numba.jit(numba.float64[:](numba.float64[:]),nopython=True,parallel=True,nogil=True,cache=True)
+def numba_fabada(data: [numpy.float64]):
         with numba.objmode(start=numba.float64):
             start = time.time()
 
@@ -224,12 +219,17 @@ def numba_fabada(data: [numpy.float64],samplerate: numpy.int32):
         min_d: numpy.float64= numpy.min(data)
         max_d: numpy.float64= numpy.ptp(data)
         min: numpy.float64 = SMALLEST_NUMBER_LARGER_THAN_ZERO_FLOAT_DIVIDABLE
-        max = float(samplerate) #set this somewhere high to preserve high frequency data
-        #todo: the min_x(variance floor) and the max are arbitrary and not necessarily correct.
+        max =  max_d/32 #set this somewhere high to preserve high frequency data
+        floor =  max#cant be less than max/2, otherwise the script doesnt run.
+        #todo: the variance floor and the max are arbitrary and not necessarily correct.
+        #TODO: however, this is due to algorithmic details that I am not in control of.
+        #I have found that the higher the "floor" the more attenuation of noise, but also signal.
+        #This algorithm only has a use if it can reduce noise more than signal and improve perceptible SNR.
+        #
         #normalize the datum
         data[:] = interpolate(data, min_d, max_d,min, max)
 
-        data_variance[:] = variance(data,max*64)
+        data_variance[:] = variance(data,floor)
 
         # initialize bayes for the function return
 
@@ -325,7 +325,6 @@ def numba_fabada(data: [numpy.float64],samplerate: numpy.int32):
 
 
             # COMBINE ITERATION ZERO
-        print(iteration)
         chi2_data_min: numpy.float64 = chi2_data
         model_weight[:] =numpy.multiply(initial_evidence, chi2_data_min)
         bayesian_weight[:] =numpy.add(model_weight,bayesian_weight)
@@ -346,11 +345,12 @@ class FilterRun(Thread):
         self.buffer = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size * self.channels)])
         self.buffer = self.buffer.reshape(-1,self.channels)
 
+
     def write_filtered_data(self):
         #t = time.time()
-        audio = self.rb.read(self.processing_size).astype(dtype=numpy.float64)
+        numpy.copyto(self.buffer,self.rb.read(self.processing_size).astype(dtype=numpy.float64))
         for i in range(self.channels):
-            self.buffer[:, i]  = numba_fabada(audio[:, i],self.processing_size)
+            numpy.copyto(self.buffer[:, i],numba_fabada(self.buffer[:, i]))
         self.processedrb.write(self.buffer.astype(dtype=self.dtype),error=True)
         #x = time.time()
         #print((x - t)*1000)
@@ -640,6 +640,8 @@ class StreamSampler(object):
 
 
 if __name__ == "__main__":
+    # after importing numpy, reset the CPU affinity of the parent process so
+    # that it will use all cores
     SS = StreamSampler(buffer_delay=0)
     SS.listen()
     SS.filterthread.start()
