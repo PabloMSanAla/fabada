@@ -184,11 +184,20 @@ def interpolate(data:[numpy.float64],min_d: numpy.float64,max_d: numpy.float64,z
 @numba.jit((numba.float64)( numba.float64[:],numba.float64[:],numba.float64[:]),parallel=True,nogil=True,cache=True)
 def power(data:[numpy.float64],posterior_mean: [numpy.float64],data_variance: [numpy.float64]):
     #twos = 2.0 * numpy.ones_like(data)
+    
     return numpy.sum((data - posterior_mean) ** 2 / data_variance)
 
 @numba.jit(numba.float64[:](numba.float64[:],numba.float64[:]),parallel=True,nogil=True,cache=True)
 def postisum(prior_variance : [numpy.float64],data_variance: [numpy.float64]):
-    return 1.0 / (1.0 / prior_variance + 1.0 / data_variance)
+    d1 = numpy.empty_like(prior_variance)  # get the mean
+    n1 = numpy.empty_like(prior_variance)
+    N = d1.size
+    for i in numba.prange(N):
+        d1[i] = 1.0 / data_variance[i]
+        n1[i] = 1.0 / prior_variance[i]
+    for i in numba.prange(N):
+        d1[i] = 1.0 / (d1[i] + n1[i])
+    return d1
 
 @numba.jit(numba.float64[:](numba.float64[:]),nopython=True,parallel=True,nogil=True,cache=True)
 def numba_fabada(data: [numpy.float64]):
@@ -206,7 +215,7 @@ def numba_fabada(data: [numpy.float64]):
         prior_variance = numpy.empty_like(data)
         model_weight = numpy.empty_like(data)
 
-        max_iter: int = 3000
+        max_iter: int = 1000
         #this has to run as much as possible, but unfortunantly, it takes a looong time to run on this much data.
 
         #numba doesn't like unions, arbitrary logic, so for fabada to work on 2x the parent thread needs to call
