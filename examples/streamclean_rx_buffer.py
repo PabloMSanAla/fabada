@@ -11,13 +11,6 @@ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
 Everyone is permitted to copy and distribute verbatim copies
 of this license document, but changing it is not allowed.
 
-STREAMCLEAN is an implementation of FABADA for streaming audio data.
-It has been optimized to achieve a 1000x speedup. It also has been vectorized.
-The FABADA algorithm has been altered to work on 1-dimension arrays of real audio data,
-split using rfft function into bands to allow for optimum variance estimation on a per-band basis.
-
-STREAMCLEAN is not patented, and is licensed under the same copywrite terms as FABADA, however,
-you are encouraged to send money in the general direction of the author, in large quantities and with frequent distributions.
 
 Instructions:
 Save the code as a .py file.
@@ -42,7 +35,7 @@ in your windows settings for default mic and speaker, respectively, this program
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
 https://vb-audio.com/Cable/ is an example of a free audio cable.
-The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
+The program expects 48000hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
 
 """
 import numpy
@@ -373,15 +366,16 @@ class FilterRun(Thread):
                 #topb = numpy.zeros_like(fft)
                 low[20:1280] = fft[20:1280] 
                 highmid[1280:3800] = fft[1280:3800]
-                topmost[3800:8000]= fft[3800:8000]
-                low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low),150.0,22100.0))
-                highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid),160.0,44100.0))
-                topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost),170.0,88200.0))
+                topmost[3800:7580]= fft[3800:7580]
+                low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low),160.0,5525.0))
+                highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid),140.0,11050.0))
+                topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost),120.0,16575.0))
                 fft[20:1280] = low[20:1280]
                 fft[1280:3800] = highmid[1280:3800]
-                fft[3800:8000] = topmost[3800:8000]
-                fft[8000:] = zeros[8000:]
-                #at this time we're just going to throw away everything above 8000 and below 20.
+                fft[3800:7580] = topmost[3800:7580]
+                fft[7580:] = zeros[7580:]
+                #at this time we're just going to throw away everything above 7580 and below 20. 1260 -> 1260 x2 -> 1260 x 3.
+                #We will also gradually reduce the time and increase the variance relative to the frequency.
                 #while often there is more on the waves than 8khz, most of it is clouded with noise.
                 #perceptibly, this is a reasonable optimization.
                 #splitting up and running each part of the bands differently helps optimize the noise filter.
