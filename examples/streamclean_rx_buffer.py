@@ -229,12 +229,13 @@ def numba_fabada(data: [numpy.float64]):
         max_d: numpy.float64= numpy.ptp(data)
         min: numpy.float64 = SMALLEST_NUMBER_LARGER_THAN_ZERO_FLOAT_DIVIDABLE
         max =  max_d/32 #set this somewhere high to preserve high frequency data
-        floor =  max#cant be less than max/2, otherwise the script doesnt run.
-        #todo: the variance floor and the max are arbitrary and not necessarily correct.
-        #TODO: however, this is due to algorithmic details that I am not in control of.
-        #I have found that the higher the "floor" the more attenuation of noise, but also signal.
-        #This algorithm only has a use if it can reduce noise more than signal and improve perceptible SNR.
-        #
+        floor =  max/4 + max/2#cant be less than max/2, otherwise the script doesnt run.
+        #The closer this is to max/2, the less the algorithm does.
+        #The higher this is, the more noise, but also signal, is attenuated.
+        #at floor = max, substantial attenuation, but not only of noise but also signal.
+        #The higher the SNR, the lower this value should be. Calculating input SNR and using it
+        #to determine how much %/2 to add to it is a future exercise.
+        
         #normalize the datum
         data[:] = interpolate(data, min_d, max_d,min, max)
 
