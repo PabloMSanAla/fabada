@@ -35,7 +35,7 @@ in your windows settings for default mic and speaker, respectively, this program
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
 https://vb-audio.com/Cable/ is an example of a free audio cable.
-The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
+The program expects 48000hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
 
 """
 import numpy
@@ -150,7 +150,7 @@ def chi2_pdf_call(x: numpy.float64):
     gamman: numpy.float64 = (x / 2.)
     gammas: numpy.float64 = (numpy.sign(gamman) * ((numpy.abs(gamman)) ** gammaz)) #raising this to the powa will just result in FUBAR
     if math.isnan(gammas):
-        gammas = 1.0
+        gammas = (numpy.sign(gamman) * ((numpy.abs(gamman)) * gammaz))
     gammaq: numpy.float64 =  numpy.exp(-x / 2.)
     gammaa: numpy.float64 =  1. / gammar
     pdf: numpy.float64 = gammaa * gammas * gammaq
@@ -174,7 +174,7 @@ def variance(data: [numpy.float64], floor: numpy.float64):
     data_variance = numpy.empty_like(data)
     N = data.size
     for i in numba.prange(N):
-        data_variance[i] = (abs(data_mean - (data[i]+floor)) **2)
+        data_variance[i] = (abs(data_mean - (data[i]+floor)) ** 2)
     return data_variance
 
 @numba.jit((numba.float64[:])( numba.float64[:],numba.float64,numba.float64, numba.float64,numba.float64))
@@ -184,7 +184,7 @@ def interpolate(data:[numpy.float64],min_d: numpy.float64,max_d: numpy.float64,z
 @numba.jit((numba.float64)( numba.float64[:],numba.float64[:],numba.float64[:]),parallel=True,nogil=True,cache=True)
 def power(data:[numpy.float64],posterior_mean: [numpy.float64],data_variance: [numpy.float64]):
     #twos = 2.0 * numpy.ones_like(data)
-    
+
     return numpy.sum((data - posterior_mean) ** 2 / data_variance)
 
 @numba.jit(numba.float64[:](numba.float64[:],numba.float64[:]),parallel=True,nogil=True,cache=True)
@@ -215,7 +215,6 @@ def numba_fabada(data: [numpy.float64]):
         prior_variance = numpy.empty_like(data)
         model_weight = numpy.empty_like(data)
 
-        max_iter: int = 1000
         #this has to run as much as possible, but unfortunantly, it takes a looong time to run on this much data.
 
         #numba doesn't like unions, arbitrary logic, so for fabada to work on 2x the parent thread needs to call
@@ -225,17 +224,17 @@ def numba_fabada(data: [numpy.float64]):
 
         #eliminate divide by zero
         data[data == 0.0] = SMALLEST_NUMBER_LARGER_THAN_ZERO_FLOAT_DIVIDABLE
-        min_d: numpy.float64= numpy.min(data)
-        max_d: numpy.float64= numpy.ptp(data)
+        min_d: numpy.float64 = numpy.min(data)
+        max_d: numpy.float64 = numpy.ptp(data)
         min: numpy.float64 = SMALLEST_NUMBER_LARGER_THAN_ZERO_FLOAT_DIVIDABLE
-        max =  max_d/32 #set this somewhere high to preserve high frequency data
-        floor =  max/4 + max/2#cant be less than max/2, otherwise the script doesnt run.
-        #The closer this is to max/2, the less the algorithm does.
-        #The higher this is, the more noise, but also signal, is attenuated.
-        #at floor = max, substantial attenuation, but not only of noise but also signal.
-        #The higher the SNR, the lower this value should be. Calculating input SNR and using it
-        #to determine how much %/2 to add to it is a future exercise.
-        
+        max =  44100.0
+        floor =  24000.0
+        #the higher max is, the less "crackle".
+        #The lower floor is, the less noise reduction is possible.
+        #floor can never be less than max/2.
+        #noise components are generally higher frequency.
+        #the higher the floor is set, the more attenuation of both noise and signal.
+        #the balance would be to estimate the energy density across bands and/or process fabada seperately per band.        
         #normalize the datum
         data[:] = interpolate(data, min_d, max_d,min, max)
 
@@ -244,13 +243,12 @@ def numba_fabada(data: [numpy.float64]):
         # initialize bayes for the function return
 
         # INITIALIZING ALGORITMH ITERATION ZERO
-        posterior_mean[:] = data
-        posterior_variance[:] = data_variance
+        posterior_mean[:] = data[:]
+        posterior_variance[:] = data_variance[:]
         evidence[:] =Evidence1st(data_variance)
-        initial_evidence[:] =evidence
+        initial_evidence[:] = evidence[:]
 
 
-        iteration: int = 1.0
         chi2_pdf: numpy.float64 = 0.0
         chi2_pdf_derivative: numpy.float64 = 0.0
 
@@ -261,14 +259,14 @@ def numba_fabada(data: [numpy.float64]):
         # GENERATES PRIORS
 
 
-        prior_mean[:] =meanx1(posterior_mean)
-        prior_variance[:] =posterior_variance
+        prior_mean[:] = meanx1(posterior_mean)
+        prior_variance[:] = posterior_variance[:]
         # APPLIY BAYES' THEOREM
 
-        posterior_variance[:] =postisum(prior_variance,data_variance)
-        posterior_mean[:] =posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
+        posterior_variance[:] = postisum(prior_variance,data_variance)
+        posterior_mean[:] = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
         # EVALUATE EVIDENCE
-        evidence[:] =Evidence(prior_mean, data, prior_variance, data_variance)
+        evidence[:] = Evidence(prior_mean, data, prior_variance, data_variance)
         evidence_derivative = numpy.mean(evidence) - evidence_previous
 
         # EVALUATE CHI2
@@ -278,9 +276,9 @@ def numba_fabada(data: [numpy.float64]):
         chi2_pdf = chi2_pdf_call(chi2_data)
 
         # COMBINE MODELS FOR THE ESTIMATION
-        model_weight[:] =numpy.multiply(evidence, chi2_data)
-        bayesian_weight[:] =numpy.add(bayesian_weight, model_weight)
-        bayesian_model[:] =numpy.add(bayesian_model, numpy.multiply(model_weight, posterior_mean))
+        model_weight[:] = numpy.multiply(evidence, chi2_data)
+        bayesian_weight[:] = numpy.add(bayesian_weight, model_weight)
+        bayesian_model[:] = numpy.add(bayesian_model, numpy.multiply(model_weight, posterior_mean))
 
 
         while 1:
@@ -288,9 +286,7 @@ def numba_fabada(data: [numpy.float64]):
                 current = time.time()
             timerun = (current - start) * 1000
             if (
-                    (int(chi2_data) > data.size and chi2_pdf_snd_derivative >= 0)
-                    or (evidence_derivative < 0)
-                    or (iteration > max_iter)
+                    (int(chi2_data) > data.size and chi2_pdf_snd_derivative >= 0 and evidence_derivative < -44100)
                     or (timerun > 495)#use no more than 95% of the time allocated per cycle
 
             ):
@@ -306,15 +302,15 @@ def numba_fabada(data: [numpy.float64]):
 
 
             # GENERATES PRIORS
-            prior_mean[:] =meanx1(posterior_mean)
+            prior_mean[:] = meanx1(posterior_mean)
             # if(posterior_mean.ndim == 2):
             #    prior_mean = meanx2(posterior_mean)
-            prior_variance[:] =posterior_variance
+            prior_variance[:] = posterior_variance
 
             # APPLIY BAYES' THEOREM
             # prevent le' devide by le zeros
-            posterior_variance[:] =postisum(prior_variance,data_variance)
-            posterior_mean[:] =posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
+            posterior_variance[:] = postisum(prior_variance,data_variance)
+            posterior_mean[:] = posterior_mean_gen(prior_mean, prior_variance, data, data_variance, posterior_variance)
 
             # EVALUATE EVIDENCE
             evidence[:] = Evidence(prior_mean, data, prior_variance, data_variance)
@@ -328,19 +324,18 @@ def numba_fabada(data: [numpy.float64]):
             chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
 
             # COMBINE MODELS FOR THE ESTIMATION
-            model_weight[:] =numpy.multiply(evidence,chi2_data)
-            bayesian_weight[:] =numpy.add(model_weight,bayesian_weight)
-            bayesian_model[:] =numpy.add(bayesian_model, numpy.multiply(model_weight,posterior_mean))
-            iteration += 1  # Set iterations done
+            model_weight[:] = numpy.multiply(evidence,chi2_data)
+            bayesian_weight[:] = numpy.add(model_weight,bayesian_weight)
+            bayesian_model[:] = numpy.add(bayesian_model, numpy.multiply(model_weight,posterior_mean))
 
 
             # COMBINE ITERATION ZERO
         chi2_data_min: numpy.float64 = chi2_data
-        model_weight[:] =numpy.multiply(initial_evidence, chi2_data_min)
-        bayesian_weight[:] =numpy.add(model_weight,bayesian_weight)
-        bayesian_model[:] =numpy.add(bayesian_model, numpy.multiply(model_weight, data))
+        model_weight[:] = numpy.multiply(initial_evidence, chi2_data_min)
+        bayesian_weight[:] = numpy.add(model_weight,bayesian_weight)
+        bayesian_model[:] = numpy.add(bayesian_model, numpy.multiply(model_weight, data))
 
-        return   interpolate(numpy.divide(bayesian_model,bayesian_weight),min, max, min_d, +max_d)
+        return  interpolate(numpy.divide(bayesian_model,bayesian_weight),min, max, min_d, +max_d)
 
 
 class FilterRun(Thread):
@@ -369,7 +364,7 @@ class FilterRun(Thread):
     def run(self):
         while self.running:
             if len(self.rb) < self.processing_size * 2:
-                time.sleep(0.001)
+                time.sleep(0.4) #idk how long we should sleep
             else:
                 self.write_filtered_data()
 
@@ -409,7 +404,7 @@ class StreamSampler(object):
 
 
     def __init__(self, sample_rate=44100, channels=2, buffer_delay=1.5, # or 1.5, measured in seconds
-                 micindex=1, speakerindex=1, dtype=numpy.int32):
+                 micindex=1, speakerindex=1, dtype=numpy.float32):
         self.pa = pyaudio.PyAudio()
         self._processing_size = sample_rate
         # np_rw_buffer (AudioFramingBuffer offers a delay time)
@@ -423,7 +418,7 @@ class StreamSampler(object):
 
         self.processedrb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
                                      seconds=6,  # Buffer size (need larger than processing size)[seconds * sample_rate]
-                                     buffer_delay=1, # as long as fabada completes in O(n) of less than the sample size in time
+                                     buffer_delay=0, # as long as fabada completes in O(n) of less than the sample size in time
                                      dtype=numpy.dtype(dtype))
 
         self.filterthread = FilterRun(self.rb,self.processedrb,self._channels,self._processing_size,self.dtype)
