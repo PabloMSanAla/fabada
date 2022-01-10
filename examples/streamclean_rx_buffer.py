@@ -11,6 +11,13 @@ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
 Everyone is permitted to copy and distribute verbatim copies
 of this license document, but changing it is not allowed.
 
+STREAMCLEAN is an implementation of FABADA for streaming audio data.
+It has been optimized to achieve a 1000x speedup. It also has been vectorized.
+The FABADA algorithm has been altered to work on 1-dimension arrays of real audio data,
+split using rfft function into bands to allow for optimum variance estimation on a per-band basis.
+
+STREAMCLEAN is not patented, and is licensed under the same copywrite terms as FABADA, however,
+you are encouraged to send money in the general direction of the author, in large quantities and with frequent distributions.
 
 Instructions:
 Save the code as a .py file.
@@ -35,7 +42,7 @@ in your windows settings for default mic and speaker, respectively, this program
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
 https://vb-audio.com/Cable/ is an example of a free audio cable.
-The program expects 48000hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
+The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
 
 """
 import numpy
