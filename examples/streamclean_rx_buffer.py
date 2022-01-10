@@ -367,9 +367,9 @@ class FilterRun(Thread):
                 low[20:1280] = fft[20:1280] 
                 highmid[1280:3800] = fft[1280:3800]
                 topmost[3800:8000]= fft[3800:8000]
-                low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low),150.0,44100.0))
-                highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid),170.0,44100.0))
-                topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost),160.0,44100.0))
+                low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low),150.0,22100.0))
+                highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid),160.0,44100.0))
+                topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost),170.0,88200.0))
                 fft[20:1280] = low[20:1280]
                 fft[1280:3800] = highmid[1280:3800]
                 fft[3800:8000] = topmost[3800:8000]
@@ -378,7 +378,7 @@ class FilterRun(Thread):
                 #while often there is more on the waves than 8khz, most of it is clouded with noise.
                 #perceptibly, this is a reasonable optimization.
                 #splitting up and running each part of the bands differently helps optimize the noise filter.
-                #problematically, the clicking remains.. insidious as always. 
+                #problematically, the clicking remains.. insiduas, 
                 self.buffer2[:, i] = numpy.fft.irfft(fft)
 
 
