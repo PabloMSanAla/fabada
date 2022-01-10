@@ -199,8 +199,8 @@ def postisum(prior_variance : [numpy.float64],data_variance: [numpy.float64]):
         d1[i] = 1.0 / (d1[i] + n1[i])
     return d1
 
-@numba.jit(numba.float64[:](numba.float64[:]),nopython=True,parallel=True,nogil=True,cache=True)
-def numba_fabada(data: [numpy.float64]):
+@numba.jit(numba.float64[:](numba.float64[:], numba.float64, numba.float64),nopython=True,parallel=True,nogil=True,cache=True)
+def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float64):
         with numba.objmode(start=numba.float64):
             start = time.time()
 
@@ -227,8 +227,8 @@ def numba_fabada(data: [numpy.float64]):
         min_d: numpy.float64 = numpy.min(data)
         max_d: numpy.float64 = numpy.ptp(data)
         min: numpy.float64 = SMALLEST_NUMBER_LARGER_THAN_ZERO_FLOAT_DIVIDABLE
-        max =  44100.0
-        floor =  24000.0
+        max =  work
+        floor =  max/2 + max/10
         #the higher max is, the less "crackle".
         #The lower floor is, the less noise reduction is possible.
         #floor can never be less than max/2.
@@ -287,7 +287,7 @@ def numba_fabada(data: [numpy.float64]):
             timerun = (current - start) * 1000
             if (
                     (int(chi2_data) > data.size and chi2_pdf_snd_derivative >= 0 and evidence_derivative < -44100)
-                    or (timerun > 495)#use no more than 95% of the time allocated per cycle
+                    or (timerun > int(timex))#use no more than 95% of the time allocated per cycle
 
             ):
                 break
@@ -337,6 +337,7 @@ def numba_fabada(data: [numpy.float64]):
 
         return  interpolate(numpy.divide(bayesian_model,bayesian_weight),min, max, min_d, +max_d)
 
+        
 
 class FilterRun(Thread):
     def __init__(self,rb,pb,channels,processing_size,dtype):
@@ -348,6 +349,8 @@ class FilterRun(Thread):
         self.processing_size = processing_size
         self.dtype = dtype
         self.buffer = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size * self.channels)])
+        self.buffer2 = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size * self.channels)])
+        self.buffer2 = self.buffer.reshape(-1,self.channels)
         self.buffer = self.buffer.reshape(-1,self.channels)
 
 
@@ -355,8 +358,32 @@ class FilterRun(Thread):
         #t = time.time()
         numpy.copyto(self.buffer,self.rb.read(self.processing_size).astype(dtype=numpy.float64))
         for i in range(self.channels):
-            numpy.copyto(self.buffer[:, i],numba_fabada(self.buffer[:, i]))
-        self.processedrb.write(self.buffer.astype(dtype=self.dtype),error=True)
+                fft = numpy.fft.rfft(self.buffer[:, i])
+                zeros = numpy.zeros_like(fft)
+                low = numpy.zeros_like(fft)
+                highmid = numpy.zeros_like(fft)
+                topmost = numpy.zeros_like(fft)
+                #topb = numpy.zeros_like(fft)
+                low[20:1280] = fft[20:1280] 
+                highmid[1280:3800] = fft[1280:3800]
+                topmost[3800:8000]= fft[3800:8000]
+                low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low),150.0,44100.0))
+                highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid),170.0,44100.0))
+                topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost),160.0,44100.0))
+                fft[20:1280] = low[20:1280]
+                fft[1280:3800] = highmid[1280:3800]
+                fft[3800:8000] = topmost[3800:8000]
+                fft[8000:] = zeros[8000:]
+                #at this time we're just going to throw away everything above 8000 and below 20.
+                #while often there is more on the waves than 8khz, most of it is clouded with noise.
+                #perceptibly, this is a reasonable optimization.
+                #splitting up and running each part of the bands differently helps optimize the noise filter.
+                #problematically, the clicking remains.. insidious as always. 
+                self.buffer2[:, i] = numpy.fft.irfft(fft)
+
+
+        #numpy.copyto(self.buffer[:, i],numba_fabada(self.buffer[:, i]))
+        self.processedrb.write(self.buffer2.astype(dtype=self.dtype),error=True)
         #x = time.time()
         #print((x - t)*1000)
 
