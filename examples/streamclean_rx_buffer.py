@@ -274,9 +274,9 @@ class FilterRun(Thread):
             surge[7580:11025] = fft[7580:11025]
 
             low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low), 130, 44100.0))
-            highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid), 130, 44100.0))
-            topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost), 120, 44100.0))
-            surge = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(surge), 100, 44100.0))
+            highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid), 120, 44100.0))
+            topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost), 110, 88200.0))
+            surge = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(surge), 100, 176400.0))
 
             fft[20:1280] = low[20:1280]
             fft[1280:3800] = highmid[1280:3800]
