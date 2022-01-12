@@ -60,7 +60,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         #However, JIT does not permit arbitrary types like UNION? maybe it does but i havnt figured out how.
         #this implementation uses a lot of for loops because they can be easily vectorized by simply replacing
         #range with numba.prange and also because they will translate well to other languages
-        #this implementation of FABADA is not optimized for 2d arrays, however, it is easily swapped by changing the means
+        #this implementation of FABADA is not optimized for 2d arrays, however, it is possibly swapped by changing the means
         #estimation and by simply changing all other code to iterate over 2d instead of 1d
         #care must be taken with numba parallelization/vectorization
 
