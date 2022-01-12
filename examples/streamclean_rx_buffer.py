@@ -137,7 +137,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
     chi2_pdf_derivative_previous: numpy.float64 = 0.0
 
     # do df calculation for chi2 residues
-    df = 64
+    df = 5 
     z = (2. * math.lgamma(df / 2.))
 
     while 1:
@@ -185,7 +185,13 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         # EVALUATE CHI2
         chi2_data = 0.0
         for i in numba.prange(N):
-            chi2_data += ((data[i] - posterior_mean[i]) ** 2 / data_variance[i])
+            chi2_data += math.sqrt((data[i] - posterior_mean[i]) ** 2) / posterior_mean[i] **2
+
+        #chi2 = square root of (actual  - expected )^2  / expected
+        #def chi2(x, y, u, q, r, s):
+          #  '''Chisquare as a function of data (x, y, and yerr=u), and model
+          #  parameters q, r, and s'''
+       #     return np.sum((y - f(x, q, r, s)) ** 2 / u ** 2)
 
         # COMBINE MODELS FOR THE ESTIMATION
         for i in numba.prange(N):
@@ -198,15 +204,12 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         # for any data set which is non-trivial. Remember, DF/2 - 1 becomes the exponent! For anything over a few hundred this quickly exceeds float64.
         # chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
         gamman: numpy.float64 = (chi2_data / 2.)
-        gammas: numpy.float64 = (numpy.sign(gamman) * (
-                (abs(gamman)) ** z))  # TODO
-        if math.isnan(gammas):
-            gammas = (numpy.sign(gamman) * ((abs(gamman)) * z))
+        gammas: numpy.float64 = ((gamman) ** z) # TODO
+        print(gamman,z)
         gammaq: numpy.float64 = math.exp(-chi2_data / 2.)
         # for particularily large values, math.exp just returns 0.0
         # TODO
         chi2_pdf = (1. / z) * gammas * gammaq
-
         # COMBINE MODELS FOR THE ESTIMATION
 
         chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
