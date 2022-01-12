@@ -35,7 +35,7 @@ in your windows settings for default mic and speaker, respectively, this program
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
 https://vb-audio.com/Cable/ is an example of a free audio cable.
-The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
+The program expects 48000hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
 
 """
 import numpy
@@ -67,31 +67,30 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         iterations: int = 1
         TAU: numpy.float64 = 2 * math.pi
         N = data.size
-        working_data:[numpy.float64] = data.copy()
 
         #must establish zeros for the model or otherwise when data is empty, algorithm will return noise
-        bayesian_weight  = numpy.zeros_like(working_data)
-        bayesian_model = numpy.zeros_like(working_data)
-        model_weight = numpy.zeros_like(working_data)
+        bayesian_weight  = numpy.zeros_like(data)
+        bayesian_model = numpy.zeros_like(data)
+        model_weight = numpy.zeros_like(data)
 
         #pre-declaring all arrays allows their memory to be allocated in advance
-        posterior_mean  = numpy.empty_like(working_data)
-        posterior_variance  = numpy.empty_like(working_data)
-        initial_evidence = numpy.empty_like(working_data)
-        evidence = numpy.empty_like(working_data)
-        prior_mean = numpy.empty_like(working_data)
-        prior_variance = numpy.empty_like(working_data)
+        posterior_mean  = numpy.empty_like(data)
+        posterior_variance  = numpy.empty_like(data)
+        initial_evidence = numpy.empty_like(data)
+        evidence = numpy.empty_like(data)
+        prior_mean = numpy.empty_like(data)
+        prior_variance = numpy.empty_like(data)
 
         #working set arrays, no real meaning, just to have work space
-        ja1 = numpy.empty_like(working_data)
-        ja2 = numpy.empty_like(working_data)
-        ja3 = numpy.empty_like(working_data)
-        ja4 = numpy.empty_like(working_data)
+        ja1 = numpy.empty_like(data)
+        ja2 = numpy.empty_like(data)
+        ja3 = numpy.empty_like(data)
+        ja4 = numpy.empty_like(data)
 
         #eliminate divide by zero
-        working_data[working_data == 0.0] = 2.22044604925e-16
-        min_d: numpy.float64 = numpy.min(working_data)
-        max_d: numpy.float64 = numpy.ptp(working_data)
+        data[data == 0.0] = 2.22044604925e-16
+        min_d: numpy.float64 = numpy.min(data)
+        max_d: numpy.float64 = numpy.ptp(data)
         min: numpy.float64 = 2.22044604925e-16
         max:numpy.float64 =  work
         floor =  max/2 + max/10
@@ -102,10 +101,9 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         #the higher the floor is set, the more attenuation of both noise and signal.
 
 
-        working_data: [numpy.float64] =  numpy.interp(working_data, (min_d, max_d),(min, max))#normalize the data
-        for i in numba.prange(N):
-            posterior_mean[i] = working_data[i]
-            prior_mean[i] = working_data[i]
+        data: [numpy.float64] =  numpy.interp(data, (min_d, max_d),(min, max))#normalize the data
+        posterior_mean[:] = data[:]
+        prior_mean[:] = data[:]
 
         prior_mean[:-1] += posterior_mean[1:] #this may not do what you think it does...
         prior_mean[1:] += posterior_mean[:-1] #read up on +=
@@ -113,17 +111,25 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         prior_mean[0] /= 2
         prior_mean[-1] /= 2
 
-        data_mean = numpy.mean(working_data)  # get the mean
-        data_variance = numpy.empty_like(working_data)
+        data_mean = numpy.mean(data)  # get the mean
+        data_variance = numpy.empty_like(data)
         for i in numba.prange(N):
-            data_variance[i] = (numpy.abs(data_mean - (working_data[i] + floor)) ** 2)
+            data_variance[i] = (numpy.abs(data_mean - (data[i])) + floor) ** 2
+
         for i in numba.prange(N):
             posterior_variance[i] = data_variance[i]
             prior_variance[i] = data_variance[i]#for the first round only
+
         for i in numba.prange(N):
-            evidence[i] = numpy.exp(-((-math.sqrt(data_variance[i])) ** 2) / (2.0 * data_variance[i])) / math.sqrt(TAU * data_variance[i])
+            ja1[i] = ((0.0 - math.sqrt(data[i])) ** 2)
+            ja2[i] = ((0.0 + data_variance[i]) * 2)
+            ja3[i] = math.sqrt(TAU * (0.0 + data_variance[i]))
         for i in numba.prange(N):
-            initial_evidence[i] = evidence[i]
+            ja4[i] = math.exp(-ja1[i] / ja2[i])
+        for i in numba.prange(N):
+            evidence[i] = ja4[i] / ja3[i]
+
+        initial_evidence[:] = evidence[:]
         evidence_previous: numpy.float64 = numpy.mean(evidence)
 
         # GENERATES PRIORS
@@ -134,22 +140,13 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
             posterior_variance[i] = 1.0 / (1.0 / data_variance[i] + 1.0 / prior_variance[i])
 
         for i in numba.prange(N):
-            posterior_mean[i] = ((prior_mean[i] / prior_variance[i]) + (working_data[i] / data_variance[i]) * posterior_variance[i])
+            posterior_mean[i] = ((prior_mean[i] / prior_variance[i]) + (data[i] / data_variance[i]) * posterior_variance[i])
 
         for i in numba.prange(N):
             bayesian_weight[i] = bayesian_weight[i] + model_weight[i]
             bayesian_model[i] = (bayesian_model[i] + (model_weight[i] * posterior_mean[i]))
 
         # EVALUATE EVIDENCE
-        N = prior_mean.size
-        for i in numba.prange(N):
-            ja1[i] = ((prior_mean[i] - working_data[i]) ** 2)
-            ja2[i] = ((prior_variance[i] + data_variance[i]) * 2)
-            ja3[i] = math.sqrt(TAU * (prior_variance[i] + data_variance[i]))
-        for i in numba.prange(N):
-            ja4[i] = math.exp(-ja1[i] / ja2[i])
-        for i in numba.prange(N):
-            evidence[i] = ja4[i] / ja3[i]
 
         evidence_derivative = numpy.mean(evidence) - evidence_previous
         evidence_previous = numpy.mean(evidence)
@@ -158,7 +155,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         #numpy does not allow fractional powers of negative numbers!
 
         for i in numba.prange(N):
-            ja1[i] = working_data[i] - posterior_mean[i]
+            ja1[i] = data[i] - posterior_mean[i]
         for i in numba.prange(N):
             ja1[i] = ja1[i] ** 2.0 / data_variance[i]
         chi2_data: numpy.float64 =  numpy.sum(ja1)
@@ -192,7 +189,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
             timerun = (current - start) * 1000
 
             if(
-                    (int(chi2_data) > working_data.size and chi2_pdf_snd_derivative >= 0)
+                    (int(chi2_data) > data.size and chi2_pdf_snd_derivative >= 0)
                     or ( evidence_derivative < 0)
                     or (timerun > int(timex)) # use no more than 95% of the time allocated per cycle
             ):
@@ -213,7 +210,8 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
             for i in numba.prange(N):
                 posterior_variance[i] = 1.0 / (1.0/ data_variance[i] + 1.0 / prior_variance[i])
             for i in numba.prange(N):
-                posterior_mean[i] = (((prior_mean[i] / prior_variance[i]) + ( working_data[i] / data_variance[i])) * posterior_variance[i])
+                posterior_mean[i] = (((prior_mean[i] / prior_variance[i]) + ( data[i] / data_variance[i])) * posterior_variance[i])
+
             prior_variance[:] = posterior_variance[:]
 
             for i in numba.prange(N):
@@ -221,8 +219,9 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
                 bayesian_model[i] = bayesian_model[i] + (model_weight[i] * posterior_mean[i])
 
             # EVALUATE EVIDENCE
+
             for i in numba.prange(N):
-                ja1[i] = ((prior_mean[i] - working_data[i]) ** 2)
+                ja1[i] = ((prior_mean[i] - math.sqrt(data[i])) ** 2)
                 ja2[i] = ((prior_variance[i] + data_variance[i]) * 2)
                 ja3[i] = math.sqrt(TAU * (prior_variance[i] + data_variance[i]))
             for i in numba.prange(N):
@@ -236,7 +235,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
             # EVALUATE CHI2
 
             for i in numba.prange(N):
-                ja1[i] = working_data[i] - posterior_mean[i]
+                ja1[i] = data[i] - posterior_mean[i]
             for i in numba.prange(N):
                 ja1[i] = ja1[i] ** 2.0 / data_variance[i]
             chi2_data = numpy.sum(ja1)
@@ -269,13 +268,13 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
             model_weight[i] = initial_evidence[i] * chi2_data_min
         for i in numba.prange(N):
             bayesian_weight[i] = (bayesian_weight[i]  + model_weight[i])
-            bayesian_model[i] = bayesian_model[i] + ( model_weight[i] *  working_data[i])
+            bayesian_model[i] = bayesian_model[i] + ( model_weight[i] *  data[i])
 
         for i in numba.prange(N):
-            working_data[i] = bayesian_model[i] / bayesian_weight[i]
-        working_data = numpy.interp(working_data,(min, max), (min_d, +max_d))#denormalize the data
+            data[i] = bayesian_model[i] / bayesian_weight[i]
+        data = numpy.interp(data,(min, max), (min_d, +max_d))#denormalize the data
         print(iterations,timerun)
-        return working_data
+        return data
         
 
 class FilterRun(Thread):
@@ -297,30 +296,8 @@ class FilterRun(Thread):
         #t = time.time()
         numpy.copyto(self.buffer,self.rb.read(self.processing_size).astype(dtype=numpy.float64))
         for i in range(self.channels):
-                fft = numpy.fft.rfft(self.buffer[:, i])
-                zeros = numpy.zeros_like(fft)
-                low = numpy.zeros_like(fft)
-                highmid = numpy.zeros_like(fft)
-                topmost = numpy.zeros_like(fft)
-                #topb = numpy.zeros_like(fft)
-                low[20:1280] = fft[20:1280] 
-                highmid[1280:3800] = fft[1280:3800]
-                topmost[3800:7580]= fft[3800:7580]
-                low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low),160.0,5525.0))
-                highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid),140.0,11050.0))
-                topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost),120.0,16575.0))
-                fft[20:1280] = low[20:1280]
-                fft[1280:3800] = highmid[1280:3800]
-                fft[3800:7580] = topmost[3800:7580]
-                fft[7580:] = zeros[7580:]
-                #at this time we're just going to throw away everything above 7580 and below 20. 1260 -> 1260 x2 -> 1260 x 3.
-                #We will also gradually reduce the time and increase the variance relative to the frequency.
-                #while often there is more on the waves than 8khz, most of it is clouded with noise.
-                #perceptibly, this is a reasonable optimization.
-                #splitting up and running each part of the bands differently helps optimize the noise filter.
-                #problematically, the clicking remains.. insiduas, 
-                self.buffer2[:, i] = numpy.fft.irfft(fft)
 
+                self.buffer2[:, i] = numba_fabada(self.buffer[:, i],495,44100)
 
         #numpy.copyto(self.buffer[:, i],numba_fabada(self.buffer[:, i]))
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype),error=True)
