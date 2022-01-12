@@ -95,7 +95,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
     # eliminate divide by zero
     data[data == 0.0] = 2.22044604925e-16
     min_d: numpy.float64 = numpy.nanmin(data)
-    max_d: numpy.float64 = numpy.ptp(data)
+    max_d: numpy.float64 = numpy.amax(data)
     min1: numpy.float64 = 2.22044604925e-16
     max1: numpy.float64 = work
     evidencesum: numpy.float128 = 0.0
@@ -104,8 +104,8 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
     # floor can never be less than max/2.
     # noise components are generally higher frequency.
     # the higher the floor is set, the more attenuation of both noise and signal.
-
-    data: [numpy.float64] = numpy.interp(data, (min_d, +max_d), (min1, max1))  # normalize the data
+    for i in numba.prange(N):
+        data[i] = (data[i] - min_d) / (max_d - min_d)
 
     posterior_mean[:] = data[:]
     prior_mean[:] = data[:]
@@ -236,7 +236,9 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
 
     for i in numba.prange(N):
         data[i] = bayesian_model[i] / bayesian_weight[i]
-    data = numpy.interp(data, (min1, max1), (min_d, +max_d))  # denormalize the data
+    for i in numba.prange(N):
+        data[i] = (data[i] * (max_d - min_d) + min_d)
+
     print(timerun)
     return data
 
