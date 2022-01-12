@@ -177,7 +177,6 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
                 evidence[i] = ja4[i] / ja3[i]
 
 
-            #(math.fsum(evidence) / N) Same thing as numpy.mean but slightly more accurate. Replaces both the mean and the sum calls with JIT'd code..
             #may or may not be faster/slower but reduces dependency on external library
             for i in numba.prange(N):
                 evidencesum += evidence[i]
