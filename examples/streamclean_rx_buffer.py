@@ -94,10 +94,10 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
 
     # eliminate divide by zero
     data[data == 0.0] = 2.22044604925e-16
-    min_d: numpy.float64 = numpy.min(data)
+    min_d: numpy.float64 = numpy.nanmin(data)
     max_d: numpy.float64 = numpy.ptp(data)
     min1: numpy.float64 = 2.22044604925e-16
-    max1: numpy.float64 = work * 16
+    max1: numpy.float64 = work
     evidencesum: numpy.float128 = 0.0
     # the higher max is, the less "crackle".
     # The lower floor is, the less noise reduction is possible.
@@ -105,7 +105,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
     # noise components are generally higher frequency.
     # the higher the floor is set, the more attenuation of both noise and signal.
 
-    data: [numpy.float64] = numpy.interp(data, (min_d, max_d), (min1, max1))  # normalize the data
+    data: [numpy.float64] = numpy.interp(data, (min_d, +max_d), (min1, max1))  # normalize the data
 
     posterior_mean[:] = data[:]
     prior_mean[:] = data[:]
@@ -137,34 +137,31 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
     chi2_pdf_derivative_previous: numpy.float64 = 0.0
 
     # do df calculation for chi2 residues
-    df = 5
+    df = 64
     z = (2. * math.lgamma(df / 2.))
 
     while 1:
 
         # GENERATES PRIORS
         prior_mean[:] = posterior_mean[:]
+
         for i in numba.prange(N - 1):
             prior_mean[i] = prior_mean[i] + posterior_mean[i + 1]
         for i in numba.prange(N - 1):
             prior_mean[i + 1] = prior_mean[i + 1] + posterior_mean[i]
-        for i in numba.prange(N - 2):
-            prior_mean[i + 1] = prior_mean[i + 1] / 3
-        prior_mean[0] /= 2
-        prior_mean[-1] /= 2
+        prior_mean[0] =  prior_mean[0] + (posterior_mean[1] + posterior_mean[2])/2.
+        prior_mean[-1] = prior_mean[-1] + (posterior_mean[-2] + posterior_mean[-3]) / 2.
 
-        # prior_mean[:-1] = prior_mean[:-1] + posterior_mean[1:] #This means add everything but the last to everything but the first.
-        # prior_mean[1:] = prior_mean[1:] + posterior_mean[:-1] #this means add everything but the first to everything but the last.
-        # prior_mean[1:-1] /= 3 #this means divide by three every element except the first and last
-        # prior_mean[0] /= 2
-        # prior_mean[-1] /= 2
+        for i in numba.prange(N):
+            prior_mean[i] = prior_mean[i] / 3.
+
 
         prior_variance[:] = posterior_variance[:]
 
         # APPLY BAYES' THEOREM ((b\a)a)\b?
 
         for i in numba.prange(N):
-            posterior_variance[i] = 1.0 / (1.0 / data_variance[i] + 1.0 / prior_variance[i])
+            posterior_variance[i] = 1. / (1. / data_variance[i] + 1. / prior_variance[i])
         for i in numba.prange(N):
             posterior_mean[i] = (
                         ((prior_mean[i] / prior_variance[i]) + (data[i] / data_variance[i])) * posterior_variance[i])
@@ -173,7 +170,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
 
         for i in numba.prange(N):
             ja1[i] = ((prior_mean[i] - math.sqrt(data[i])) ** 2)
-            ja2[i] = ((prior_variance[i] + data_variance[i]) * 2)
+            ja2[i] = ((prior_variance[i] + data_variance[i]) * 2.)
             ja3[i] = math.sqrt(TAU * (prior_variance[i] + data_variance[i]))
         for i in numba.prange(N):
             ja4[i] = math.exp(-ja1[i] / ja2[i])
@@ -240,6 +237,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
     for i in numba.prange(N):
         data[i] = bayesian_model[i] / bayesian_weight[i]
     data = numpy.interp(data, (min1, max1), (min_d, +max_d))  # denormalize the data
+    print(timerun)
     return data
 
 
@@ -273,17 +271,17 @@ class FilterRun(Thread):
             topmost[3800:7580] = fft[3800:7580]
             surge[7580:11025] = fft[7580:11025]
 
-            low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low), 130, 44100.0))
-            highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid), 120, 44100.0))
-            topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost), 110, 88200.0))
-            surge = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(surge), 100, 176400.0))
+            low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low), 130, 1325.0))
+            highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid), 120, 2768.0))
+            topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost), 110, 5512.0))
+            surge = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(surge), 100, 11025.0))
 
             fft[20:1280] = low[20:1280]
             fft[1280:3800] = highmid[1280:3800]
             fft[3800:7580] = topmost[3800:7580]
             fft[7580:11025] = surge[7580:11025]
 
-            fft[11025:] = zeros[11025:]
+            fft[12000:] = zeros[12000:]
             fft[:20] = zeros[:20]
             # at this time we're just going to throw away everything above 7580 and below 20. 1260 -> 1260 x2 -> 1260 x 3.
             # We will also gradually reduce the time and increase the variance relative to the frequency.
@@ -292,7 +290,6 @@ class FilterRun(Thread):
             # splitting up and running each part of the bands differently helps optimize the noise filter.
             # problematically, the clicking remains.. insiduas,
             self.buffer2[:, i] = numpy.fft.irfft(fft)
-            self.buffer2[:, i] = numba_fabada(self.buffer[:, i], 495.0, 44100.0)
 
         # numpy.copyto(self.buffer[:, i],numba_fabada(self.buffer[:, i]))
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
