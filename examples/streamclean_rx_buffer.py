@@ -104,16 +104,17 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
     # floor can never be less than max/2.
     # noise components are generally higher frequency.
     # the higher the floor is set, the more attenuation of both noise and signal.
+
+    data_mean = numpy.mean(data)  # get the mean
+    data_variance = numpy.empty_like(data)
+    for i in numba.prange(N):
+        data_variance[i] = math.sqrt(numpy.abs(data_mean - (data[i]+max1/2)) ** 2)
+
     for i in numba.prange(N):
         data[i] = (data[i] - min_d) / (max_d - min_d)
 
     posterior_mean[:] = data[:]
     prior_mean[:] = data[:]
-    data_mean = numpy.mean(data)  # get the mean
-    data_variance = numpy.empty_like(data)
-
-    for i in numba.prange(N):
-        data_variance[i] = math.sqrt(numpy.abs(data_mean - (data[i]+max1/4)) ** 2)
 
     posterior_variance[:] = data_variance[:]
 
