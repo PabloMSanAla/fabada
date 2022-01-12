@@ -113,7 +113,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
     data_variance = numpy.empty_like(data)
 
     for i in numba.prange(N):
-        data_variance[i] = numpy.abs(data_mean - (data[i] + max1 / 3 + max1 / 6)) ** 2
+        data_variance[i] = math.sqrt(numpy.abs(data_mean - (data[i]+max1/4)) ** 2)
 
     posterior_variance[:] = data_variance[:]
 
@@ -137,7 +137,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
     chi2_pdf_derivative_previous: numpy.float64 = 0.0
 
     # do df calculation for chi2 residues
-    df = 5 
+    df = 5
     z = (2. * math.lgamma(df / 2.))
 
     while 1:
@@ -205,7 +205,6 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         # chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
         gamman: numpy.float64 = (chi2_data / 2.)
         gammas: numpy.float64 = ((gamman) ** z) # TODO
-        print(gamman,z)
         gammaq: numpy.float64 = math.exp(-chi2_data / 2.)
         # for particularily large values, math.exp just returns 0.0
         # TODO
@@ -223,7 +222,8 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         timerun = (current - start) * 1000
 
         if (
-                (iterations == 92)
+                (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
+                and (evidence_derivative < 0)
                 or (timerun > int(timex))  # use no more than 95% of the time allocated per cycle
         ):
             break
@@ -242,7 +242,6 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
     for i in numba.prange(N):
         data[i] = (data[i] * (max_d - min_d) + min_d)
 
-    print(timerun)
     return data
 
 
@@ -271,20 +270,20 @@ class FilterRun(Thread):
             topmost = numpy.zeros_like(fft)
             surge = numpy.zeros_like(fft)
             # topb = numpy.zeros_like(fft)
-            low[20:1280] = fft[20:1280]
-            highmid[1280:3800] = fft[1280:3800]
-            topmost[3800:7580] = fft[3800:7580]
-            surge[7580:11025] = fft[7580:11025]
+            low[20:1000] = fft[20:1000]
+            highmid[1000:3000] = fft[1000:3000]
+            topmost[3000:6000] = fft[3000:6000]
+            surge[6000:11025] = fft[6000:11025]
 
-            low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low), 130, 1325.0))
-            highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid), 120, 2768.0))
-            topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost), 110, 5512.0))
-            surge = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(surge), 100, 11025.0))
+            low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low), 130, 22050.0))
+            highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid), 120, 22050.0))
+            topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost), 110, 44100.0))
+            surge = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(surge), 100, 22050.0))
 
-            fft[20:1280] = low[20:1280]
-            fft[1280:3800] = highmid[1280:3800]
-            fft[3800:7580] = topmost[3800:7580]
-            fft[7580:11025] = surge[7580:11025]
+            fft[20:1000] = low[20:1000]
+            fft[1000:4000] = highmid[1000:4000]
+            fft[3000:6000] = topmost[3000:6000]
+            fft[6000:11025] = surge[6000:11025]
 
             fft[12000:] = zeros[12000:]
             fft[:20] = zeros[:20]
