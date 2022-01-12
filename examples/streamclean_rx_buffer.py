@@ -38,6 +38,10 @@ https://vb-audio.com/Cable/ is an example of a free audio cable.
 The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
 
 """
+#this line of code is from 2012 and suggests that floating point division will be preferred if this is used.
+#However, it's not really needed, now that python has a standard math library.
+
+from __future__ import division
 import numpy
 import pyaudio
 import numba
@@ -92,7 +96,8 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         min_d: numpy.float64 = numpy.min(data)
         max_d: numpy.float64 = numpy.ptp(data)
         min: numpy.float64 = 2.22044604925e-16
-        max:numpy.float64 =  44100
+        max:numpy.float64 =  88200
+        evidencesum: numpy.float128 = 0.0
         #the higher max is, the less "crackle".
         #The lower floor is, the less noise reduction is possible.
         #floor can never be less than max/2.
@@ -108,7 +113,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         data_variance = numpy.empty_like(data)
 
         for i in numba.prange(N):
-            data_variance[i] = numpy.abs(data_mean - (data[i]+max)) ** 2
+            data_variance[i] = numpy.abs(data_mean - (data[i] + max/3 + max/6)) ** 2
 
         posterior_variance[:] = data_variance[:]
 
@@ -123,11 +128,11 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         evidence_previous: numpy.float64 = numpy.mean(evidence)
         initial_evidence[:] = evidence[:]
 
+        chi2_data_min: numpy.float64 = 0.0
         for i in numba.prange(N):
             ja1[i] = data[i] - posterior_mean[i]
         for i in numba.prange(N):
-            ja1[i] = ja1[i] ** 2.0 / data_variance[i]
-        chi2_data_min: numpy.float64 = numpy.sum(ja1)
+            chi2_data_min += ja1[i] ** 2.0 / data_variance[i]
         chi2_pdf_previous: numpy.float64 = 0.0
         chi2_pdf_derivative_previous: numpy.float64 = 0.0
         # COMBINE MODELS FOR THE ESTIMATION
@@ -137,14 +142,24 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
 
         # GENERATES PRIORS
             prior_mean[:] = posterior_mean[:]
-            prior_mean[:-1] += posterior_mean[1:]
-            prior_mean[1:] += posterior_mean[:-1]
-            prior_mean[1:-1] /= 3
+            for i in numba.prange(N-1):
+                prior_mean[i] = prior_mean[i] + posterior_mean[i+1]
+            for i in numba.prange(N-1):
+                prior_mean[i+1] = prior_mean[i+1] + posterior_mean[i]
+            for i in numba.prange(N - 2):
+                prior_mean[i+1] = prior_mean[i+1]/3
             prior_mean[0] /= 2
             prior_mean[-1] /= 2
 
-            # APPLY BAYES' THEOREM ((b\a)a)\b?
+        #prior_mean[:-1] = prior_mean[:-1] + posterior_mean[1:] #This means add everything but the last to everything but the first.
+            #prior_mean[1:] = prior_mean[1:] + posterior_mean[:-1] #this means add everything but the first to everything but the last.
+            #prior_mean[1:-1] /= 3 #this means divide by three every element except the first and last
+            #prior_mean[0] /= 2
+            #prior_mean[-1] /= 2
+
             prior_variance[:] = posterior_variance[:]
+
+            # APPLY BAYES' THEOREM ((b\a)a)\b?
 
             for i in numba.prange(N):
                 posterior_variance[i] = 1.0 / (1.0/ data_variance[i] + 1.0 / prior_variance[i])
@@ -162,13 +177,16 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
             for i in numba.prange(N):
                 evidence[i] = ja4[i] / ja3[i]
 
-            evidence_derivative: numpy.float64 = numpy.mean(evidence) - evidence_previous
 
-            # EVALUATE CHI2
-
+            #(math.fsum(evidence) / N) Same thing as numpy.mean but slightly more accurate. Replaces both the mean and the sum calls with JIT'd code..
+            #may or may not be faster/slower but reduces dependency on external library
             for i in numba.prange(N):
-                ja1[i] = ((data[i] - posterior_mean[i]) ** 2 / data_variance[i])
-            chi2_data = numpy.sum(ja1)
+                evidencesum += evidence[i]
+            evidence_derivative: numpy.float64 =  (numpy.float64(evidencesum) / numpy.float64(N)) - evidence_previous
+            # EVALUATE CHI2
+            chi2_data = 0.0
+            for i in numba.prange(N):
+                chi2_data += ((data[i] - posterior_mean[i]) ** 2 / data_variance[i])
 
 
             # COMBINE MODELS FOR THE ESTIMATION
@@ -179,7 +197,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
                 bayesian_weight[i] = bayesian_weight[i] + model_weight[i]
                 bayesian_model[i] = bayesian_model[i] + (model_weight[i] * posterior_mean[i])
 
-            df: int = 5  # note: this isnt the right way to use this function. DF is supposed to be, like data.size but that would be enormous
+            df: int = 1  # note: this isnt the right way to use this function. DF is supposed to be, like data.size but that would be enormous
             #for any data set which is non-trivial. Remember, DF/2 - 1 becomes the exponent! For anything over a few hundred this quickly exceeds float64.
             ## chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
             gammar: numpy.float64 = (2. * math.lgamma(df / 2.))
@@ -212,7 +230,8 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
                     or (abs(evidence_derivative) < 0)
                     or (timerun > int(timex))  # use no more than 95% of the time allocated per cycle
             ):
-                break
+                if (iterations > 64):
+                    break
 
             iterations += 1
 
