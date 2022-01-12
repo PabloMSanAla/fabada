@@ -38,8 +38,7 @@ https://vb-audio.com/Cable/ is an example of a free audio cable.
 The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything thanks to Justin Engel.
 
 """
-#this line of code is from 2012 and suggests that floating point division will be preferred if this is used.
-#However, it's not really needed, now that python has a standard math library.
+
 
 from __future__ import division
 import numpy
