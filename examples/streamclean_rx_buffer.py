@@ -23,7 +23,7 @@ https://github.com/conda-forge/miniforge/#download
 https://docs.conda.io/en/latest/miniconda.html
 (using miniforge command line window)
 conda install numba, scipy, numpy, pipwin, np_rw_buffer
-pip install pipwin
+pip install pipwin,dearpygui
 pipwin install pyaudio #assuming you're on windows
 
 python thepythonfilename.py #assuming the python file is in the current directory
@@ -48,11 +48,14 @@ from np_rw_buffer import AudioFramingBuffer
 from threading import Thread
 import math
 import time
+import dearpygui.dearpygui as dpg
 
 
-@numba.jit(numba.float64[:](numba.float64[:], numba.float64, numba.float64), nopython=True, parallel=True, nogil=True,
+
+
+@numba.jit(numba.float64[:](numba.float64[:], numba.int64, numba.float64,numba.float64), nopython=True, parallel=True, nogil=True,
            cache=True)
-def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float64):
+def numba_fabada(data: [numpy.float64], timex: numpy.int64, work: numpy.float64,floor=numpy.float64):
     # notes:
     # The pythonic way to COPY an array is to do x[:] = y[:]
     # do x=y and it wont copy it, so any changes made to X will also be made to Y.
@@ -105,13 +108,14 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
     # noise components are generally higher frequency.
     # the higher the floor is set, the more attenuation of both noise and signal.
 
-    data_mean = numpy.mean(data)  # get the mean
-    data_variance = numpy.empty_like(data)
-    for i in numba.prange(N):
-        data_variance[i] = math.sqrt(numpy.abs(data_mean - (data[i]+max1/2)) ** 2)
 
     for i in numba.prange(N):
         data[i] = (data[i] - min_d) / (max_d - min_d)
+
+    data_mean = numpy.mean(data)  # get the mean
+    data_variance = numpy.empty_like(data)
+    for i in numba.prange(N):
+        data_variance[i] = math.sqrt(numpy.abs(data_mean - (data[i] * max1) + floor) ** 2) #normalize BEFORE variance
 
     posterior_mean[:] = data[:]
     prior_mean[:] = data[:]
@@ -225,7 +229,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         if (
                 (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
                 and (evidence_derivative < 0)
-                or (timerun > int(timex))  # use no more than 95% of the time allocated per cycle
+                or (int(timerun) > int(timex))  # use no more than 95% of the time allocated per cycle
         ):
             break
 
@@ -242,12 +246,11 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
         data[i] = bayesian_model[i] / bayesian_weight[i]
     for i in numba.prange(N):
         data[i] = (data[i] * (max_d - min_d) + min_d)
-
     return data
 
 
 class FilterRun(Thread):
-    def __init__(self, rb, pb, channels, processing_size, dtype):
+    def __init__(self, rb, pb, channels, processing_size, dtype,fftlow,ffthigh,work,time,floor):
         super(FilterRun, self).__init__()
         self.running = True
         self.rb = rb
@@ -259,6 +262,11 @@ class FilterRun(Thread):
         self.buffer2 = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size * self.channels)])
         self.buffer2 = self.buffer.reshape(-1, self.channels)
         self.buffer = self.buffer.reshape(-1, self.channels)
+        self.fftlow = fftlow
+        self.ffthigh = ffthigh
+        self.work = work
+        self.time = time
+        self.floor = floor
 
     def write_filtered_data(self):
         # t = time.time()
@@ -266,40 +274,15 @@ class FilterRun(Thread):
         for i in range(self.channels):
             fft = numpy.fft.rfft(self.buffer[:, i])
             zeros = numpy.zeros_like(fft)
-            low = numpy.zeros_like(fft)
-            highmid = numpy.zeros_like(fft)
-            topmost = numpy.zeros_like(fft)
-            surge = numpy.zeros_like(fft)
-            # topb = numpy.zeros_like(fft)
-            low[20:1000] = fft[20:1000]
-            highmid[1000:3000] = fft[1000:3000]
-            topmost[3000:6000] = fft[3000:6000]
-            surge[6000:11025] = fft[6000:11025]
-
-            low = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(low), 130, 22050.0))
-            highmid = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(highmid), 120, 22050.0))
-            topmost = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(topmost), 110, 44100.0))
-            surge = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(surge), 100, 22050.0))
-
-            fft[20:1000] = low[20:1000]
-            fft[1000:4000] = highmid[1000:4000]
-            fft[3000:6000] = topmost[3000:6000]
-            fft[6000:11025] = surge[6000:11025]
-
-            fft[12000:] = zeros[12000:]
-            fft[:20] = zeros[:20]
-            # at this time we're just going to throw away everything above 7580 and below 20. 1260 -> 1260 x2 -> 1260 x 3.
-            # We will also gradually reduce the time and increase the variance relative to the frequency.
-            # while often there is more on the waves than 8khz, most of it is clouded with noise.
-            # perceptibly, this is a reasonable optimization.
-            # splitting up and running each part of the bands differently helps optimize the noise filter.
-            # problematically, the clicking remains.. insiduas,
+            band = numpy.zeros_like(fft)
+            band[self.fftlow:self.ffthigh] = fft[self.fftlow:self.ffthigh]
+            band = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(band), self.time, self.work, self.floor))
+            fft[self.fftlow:self.ffthigh] = band[self.fftlow:self.ffthigh]
+            fft[self.ffthigh:] = zeros[self.ffthigh:]
+            fft[:self.fftlow] = zeros[:self.fftlow]
             self.buffer2[:, i] = numpy.fft.irfft(fft)
-
-        # numpy.copyto(self.buffer[:, i],numba_fabada(self.buffer[:, i]))
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
-        # x = time.time()
-        # print((x - t)*1000)
+
 
     def run(self):
         while self.running:
@@ -358,12 +341,19 @@ class StreamSampler(object):
                                               buffer_delay=0,
                                               # as long as fabada completes in O(n) of less than the sample size in time
                                               dtype=numpy.dtype(dtype))
-
-        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype)
+        self.fftlow = 20
+        self.ffthigh = 11025
+        self.work = 1.
+        self.time = 495
+        self.floor = 1
+        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.fftlow,self.ffthigh,self.work,self.time, self.floor)
         self.micindex = micindex
         self.speakerindex = speakerindex
         self.micstream = None
         self.speakerstream = None
+        self.speakerdevice = ""
+        self.micdevice = ""
+
 
         # Set inputs for inheritance
         self.set_sample_rate(sample_rate)
@@ -495,7 +485,8 @@ class StreamSampler(object):
             if devinfo['maxInputChannels'] == 2:
                 for keyword in ["microsoft"]:
                     if keyword in devinfo["name"].lower():
-                        print(("Found an input: device %d - %s" % (i, devinfo["name"])))
+                        print(("Found an input!"))
+                        self.micdevice = devinfo["name"]
                         device_index = i
                         self.micindex = device_index
 
@@ -523,7 +514,8 @@ class StreamSampler(object):
             if devinfo['maxOutputChannels'] == 2:
                 for keyword in ["microsoft"]:
                     if keyword in devinfo["name"].lower():
-                        print(("Found an output: device %d - %s" % (i, devinfo["name"])))
+                        print(("Found an output!"))
+                        self.speakerdevice = devinfo["name"]
                         device_index = i
                         self.speakerindex = device_index
 
@@ -569,6 +561,8 @@ class StreamSampler(object):
 
         return numpy.column_stack(chans).astype(self.dtype).tobytes(), pyaudio.paContinue
 
+
+
     def stream_start(self):
         if self.micstream is None:
             self.micstream = self.open_mic_stream()
@@ -590,11 +584,64 @@ if __name__ == "__main__":
     SS = StreamSampler(buffer_delay=0)
     SS.listen()
     SS.filterthread.start()
-
-    while SS.is_running():
-        inp = input('Press enter to quit!\n')  # Halt until user input
+    def close():
+        dpg.destroy_context()
         SS.filterthread.stop()
         SS.stop()
-        break
+        quit()
+    def fftminlog(sender, app_data):
+        value = int(app_data)
+        if value < SS.ffthigh:
+            SS.fftlow = value
+        else:
+            dpg.set_value('FFTmin',SS.ffthigh-1)
+            SS.fftlow = SS.ffthigh-1
+        SS.filterthread.fftlow = SS.fftlow
 
-    # SS.stop()
+
+    def fftmaxlog(sender, app_data):
+        value = int(app_data)
+        if value > SS.fftlow:
+            SS.ffthigh = value
+        else:
+            dpg.set_value('FFTMax',SS.fftlow+1)
+            SS.ffthigh = SS.fftlow+1
+        SS.filterthread.ffthigh = SS.ffthigh
+
+
+    def worklog(sender, app_data):
+        SS.work = float(app_data)
+        SS.filterthread.work = SS.work
+
+    def timelog(sender, app_data):
+        SS.time = int(app_data)
+        SS.time.work = SS.time
+
+    def floorlog(sender, app_data):
+        SS.floor = float(app_data)
+        SS.filterthread.floor = SS.floor
+
+
+    dpg.create_context()
+    dpg.create_viewport()
+    dpg.setup_dearpygui()
+    with dpg.window(label="FABADA Streamclean",autosize=True, width = 500):
+        dpg.add_text("Welcome to FABADA! Feel free to experiment.")
+        dpg.add_text(f"Your speaker device is: ({SS.speakerdevice})")
+        dpg.add_text(f"Your microphone device is:({SS.micdevice})")
+
+        dpg.add_slider_int(label="FFTmin",tag="FFTmin", default_value=SS.fftlow, min_value=1, max_value=11025,
+                           callback=fftminlog)
+        dpg.add_slider_int(label="FFTMax",tag="FFTMax", default_value=SS.ffthigh, min_value=1, max_value=11025,
+                           callback=fftmaxlog)
+        dpg.add_slider_float(label="work",tag="work", default_value=SS.work, min_value=1, max_value=12,
+                             callback=worklog)
+        dpg.add_slider_int(label="time",tag="time", default_value=SS.time, min_value=1, max_value=495,
+                           callback=timelog)
+        dpg.add_slider_float(label="floor",tag="floor", default_value=SS.floor, min_value=0.001, max_value=88200,
+                             callback=floorlog)
+
+    while SS.is_running():
+        dpg.show_viewport()
+        dpg.start_dearpygui()
+        input("Press Enter to continue...")
