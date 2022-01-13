@@ -53,6 +53,7 @@ import dearpygui.dearpygui as dpg
 
 
 
+
 @numba.jit(numba.types.Tuple((numba.int32, numba.float64[:]))(numba.float64[:], numba.float64, numba.float64,numba.float64), nopython=True, parallel=True, nogil=True,cache=True)
 def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float64,floor=numpy.float64):
     # notes:
@@ -268,6 +269,12 @@ class FilterRun(Thread):
         self.floor = floor
         self.iterations = iterations
 
+        #The four lines below take a buffer of canvas rgb values, make them ready for dearpygui
+        #self.dirty = numpy.frombuffer(self.fig.canvas.tostring_rgb(), dtype=numpy.uint8) / 255
+        #self.dirty = self.dirty.reshape(self.fig.canvas.get_width_height()[::-1] + (3,))
+        #h, w = self.dirty.shape[:2]
+       # self.dirty1 = numpy.dstack((self.dirty, numpy.zeros((h, w), dtype=numpy.uint8) + 255))  # add alpha channel
+
     def write_filtered_data(self):
         # t = time.time()
         numpy.copyto(self.buffer, self.rb.read(self.processing_size).astype(dtype=numpy.float64))
@@ -289,7 +296,7 @@ class FilterRun(Thread):
     def run(self):
         while self.running:
             if len(self.rb) < self.processing_size * 2:
-                time.sleep(0.4)  # idk how long we should sleep
+                time.sleep(0.05)  # idk how long we should sleep
             else:
                 self.write_filtered_data()
 
@@ -343,11 +350,12 @@ class StreamSampler(object):
                                               buffer_delay=0,
                                               # as long as fabada completes in O(n) of less than the sample size in time
                                               dtype=numpy.dtype(dtype))
+
         self.fftlow = 20
         self.ffthigh = 11025
-        self.work = 1.
-        self.time = 495
-        self.floor = 1
+        self.work = 1. #included only for completeness
+        self.time = 495 #generally, set this to whatever timeframe you want it done in. 44100 samples = 500ms window.
+        self.floor = 8192#unknown, seems to do better with higher values
         self.iterations = 0
         self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.fftlow,self.ffthigh,self.work,self.time, self.floor,self.iterations)
         self.micindex = micindex
@@ -488,7 +496,6 @@ class StreamSampler(object):
             if devinfo['maxInputChannels'] == 2:
                 for keyword in ["microsoft"]:
                     if keyword in devinfo["name"].lower():
-                        print(("Found an input!"))
                         self.micdevice = devinfo["name"]
                         device_index = i
                         self.micindex = device_index
@@ -517,7 +524,6 @@ class StreamSampler(object):
             if devinfo['maxOutputChannels'] == 2:
                 for keyword in ["microsoft"]:
                     if keyword in devinfo["name"].lower():
-                        print(("Found an output!"))
                         self.speakerdevice = devinfo["name"]
                         device_index = i
                         self.speakerindex = device_index
@@ -611,28 +617,15 @@ if __name__ == "__main__":
             dpg.set_value('FFTMax',SS.fftlow+1)
             SS.ffthigh = SS.fftlow+1
         SS.filterthread.ffthigh = SS.ffthigh
-
-
-    def worklog(sender, app_data):
-        SS.work = float(app_data)
-        SS.filterthread.work = SS.work
-
-    def timelog(sender, app_data):
-        SS.time = int(app_data)
-        SS.time.work = SS.time
-
-    def floorlog(sender, app_data):
-        SS.floor = float(app_data)
-        SS.filterthread.floor = SS.floor
     def iter():
         dpg.set_value('iterations', f"Fabada current iterations: {SS.filterthread.iterations}")
 
 
     dpg.create_context()
-    dpg.create_viewport()
+    dpg.create_viewport(title='FABADA Streamclean', height=200, width = 400)
     dpg.setup_dearpygui()
     #dpg.set_exit_callback(close())
-    with dpg.window(label="FABADA Streamclean",autosize=True, width = 500 ):
+    with dpg.window(autosize=True, width = 500) as main_window:
         dpg.add_text("Welcome to FABADA! Feel free to experiment.")
         dpg.add_text(f"Your speaker device is: ({SS.speakerdevice})")
         dpg.add_text(f"Your microphone device is:({SS.micdevice})")
@@ -642,16 +635,8 @@ if __name__ == "__main__":
                            callback=fftminlog)
         dpg.add_slider_int(label="FFTMax",tag="FFTMax", default_value=SS.ffthigh, min_value=1, max_value=11025,
                            callback=fftmaxlog)
-        dpg.add_slider_float(label="work",tag="work", default_value=SS.work, min_value=1, max_value=12,
-                             callback=worklog)
-        dpg.add_slider_int(label="time",tag="time", default_value=SS.time, min_value=1, max_value=495,
-                           callback=timelog)
-        dpg.add_slider_float(label="floor",tag="floor", default_value=SS.floor, min_value=0.001, max_value=88200,
-                             callback=floorlog)
-        dpg.set_exit_callback(close)
     dpg.show_viewport()
     while dpg.is_dearpygui_running():
         iter()#this runs once a frame.
         dpg.render_dearpygui_frame()
-
-
+    close()
