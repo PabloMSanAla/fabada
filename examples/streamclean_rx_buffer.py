@@ -279,14 +279,10 @@ class FilterRun(Thread):
             band[self.fftlow:self.ffthigh] = fft[self.fftlow:self.ffthigh]
             iteration, band1 = numba_fabada(numpy.fft.irfft(band), float(self.time), self.work, self.floor)
             band = numpy.fft.rfft(band1)
-            fft[self.fftlow:self.ffthigh] = band[self.fftlow:self.ffthigh]
-            fft[self.ffthigh:] = zeros[self.ffthigh:]
-            fft[:self.fftlow] = zeros[:self.fftlow]
-            self.buffer2[:, i] = numpy.fft.irfft(fft)
+            zeros[self.fftlow:self.ffthigh] = band[self.fftlow:self.ffthigh]
+            self.buffer2[:, i] = numpy.fft.irfft(zeros)
             iterationz = iterationz + iteration
         self.iterations = iterationz
-        print(self.iterations)
-
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
 
 
@@ -596,6 +592,7 @@ if __name__ == "__main__":
         SS.filterthread.stop()
         SS.stop()
         quit()
+
     def fftminlog(sender, app_data):
         value = int(app_data)
         if value < SS.ffthigh:
@@ -627,16 +624,19 @@ if __name__ == "__main__":
     def floorlog(sender, app_data):
         SS.floor = float(app_data)
         SS.filterthread.floor = SS.floor
+    def iter():
+        dpg.set_value('iterations', f"Fabada current iterations: {SS.filterthread.iterations}")
 
 
     dpg.create_context()
     dpg.create_viewport()
     dpg.setup_dearpygui()
-    with dpg.window(label="FABADA Streamclean",autosize=True, width = 500):
+    #dpg.set_exit_callback(close())
+    with dpg.window(label="FABADA Streamclean",autosize=True, width = 500 ):
         dpg.add_text("Welcome to FABADA! Feel free to experiment.")
         dpg.add_text(f"Your speaker device is: ({SS.speakerdevice})")
         dpg.add_text(f"Your microphone device is:({SS.micdevice})")
-        #dpg.add_text(f"Your current iterations is:({SS.iterations})") # work in progress
+        dpg.add_text("Fabada current iterations: 0",tag="iterations")
 
         dpg.add_slider_int(label="FFTmin",tag="FFTmin", default_value=SS.fftlow, min_value=1, max_value=11025,
                            callback=fftminlog)
@@ -648,8 +648,10 @@ if __name__ == "__main__":
                            callback=timelog)
         dpg.add_slider_float(label="floor",tag="floor", default_value=SS.floor, min_value=0.001, max_value=88200,
                              callback=floorlog)
+        dpg.set_exit_callback(close)
+    dpg.show_viewport()
+    while dpg.is_dearpygui_running():
+        iter()#this runs once a frame.
+        dpg.render_dearpygui_frame()
 
-    while SS.is_running():
-        dpg.show_viewport()
-        dpg.start_dearpygui()
-        input("Press Enter to continue...")
+
