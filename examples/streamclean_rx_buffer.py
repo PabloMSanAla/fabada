@@ -13,7 +13,7 @@ of this license document, but changing it is not allowed.
 
 
 Instructions:
-Save the code as a .py file.
+Save the code as a .pyw file to disable the console. Save as a pw to enable it.
 Install the latest miniforge for you into a folder, don't add it to path, launch it from start menu.
 Note: if python is installed elsewhere this may fail. If it fails, try this again with miniconda instead,
 as miniconda doesn't install packages to the system library locations.
@@ -26,7 +26,7 @@ conda install numba, scipy, numpy, pipwin, np_rw_buffer
 pip install pipwin
 pipwin install pyaudio #assuming you're on windows
 
-python thepythonfilename.py #assuming the python file is in the current directory
+python thepythonfilename.pyw #assuming the python file is in the current directory
 
 Usage:
 You'll need a line-in device or virtual audio cable you can configure so you can loop the output to input.
@@ -635,8 +635,10 @@ if __name__ == "__main__":
                            callback=fftminlog)
         dpg.add_slider_int(label="FFTMax",tag="FFTMax", default_value=SS.ffthigh, min_value=1, max_value=11025,
                            callback=fftmaxlog)
+    dpg.set_primary_window(main_window,True)  # TODO: Added Primary window, so the dpg window fills the whole Viewport
+
     dpg.show_viewport()
     while dpg.is_dearpygui_running():
         iter()#this runs once a frame.
         dpg.render_dearpygui_frame()
-    close()
+    close() #clean up the program runtime when the user closes the window
