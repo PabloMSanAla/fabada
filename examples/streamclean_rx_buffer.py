@@ -23,7 +23,7 @@ https://github.com/conda-forge/miniforge/#download
 https://docs.conda.io/en/latest/miniconda.html
 (using miniforge command line window)
 conda install numba, scipy, numpy, pipwin, np_rw_buffer
-pip install pipwin,dearpygui
+pip install pipwin
 pipwin install pyaudio #assuming you're on windows
 
 python thepythonfilename.py #assuming the python file is in the current directory
@@ -53,9 +53,8 @@ import dearpygui.dearpygui as dpg
 
 
 
-@numba.jit(numba.float64[:](numba.float64[:], numba.int64, numba.float64,numba.float64), nopython=True, parallel=True, nogil=True,
-           cache=True)
-def numba_fabada(data: [numpy.float64], timex: numpy.int64, work: numpy.float64,floor=numpy.float64):
+@numba.jit(numba.types.Tuple((numba.int32, numba.float64[:]))(numba.float64[:], numba.float64, numba.float64,numba.float64), nopython=True, parallel=True, nogil=True,cache=True)
+def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float64,floor=numpy.float64):
     # notes:
     # The pythonic way to COPY an array is to do x[:] = y[:]
     # do x=y and it wont copy it, so any changes made to X will also be made to Y.
@@ -229,7 +228,7 @@ def numba_fabada(data: [numpy.float64], timex: numpy.int64, work: numpy.float64,
         if (
                 (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
                 and (evidence_derivative < 0)
-                or (int(timerun) > int(timex))  # use no more than 95% of the time allocated per cycle
+                or (int(timerun) > int(timex))  # use no more than the time allocated per cycle
         ):
             break
 
@@ -246,11 +245,11 @@ def numba_fabada(data: [numpy.float64], timex: numpy.int64, work: numpy.float64,
         data[i] = bayesian_model[i] / bayesian_weight[i]
     for i in numba.prange(N):
         data[i] = (data[i] * (max_d - min_d) + min_d)
-    return data
+    return iterations, data
 
 
 class FilterRun(Thread):
-    def __init__(self, rb, pb, channels, processing_size, dtype,fftlow,ffthigh,work,time,floor):
+    def __init__(self, rb, pb, channels, processing_size, dtype,fftlow,ffthigh,work,time,floor,iterations):
         super(FilterRun, self).__init__()
         self.running = True
         self.rb = rb
@@ -267,20 +266,27 @@ class FilterRun(Thread):
         self.work = work
         self.time = time
         self.floor = floor
+        self.iterations = iterations
 
     def write_filtered_data(self):
         # t = time.time()
         numpy.copyto(self.buffer, self.rb.read(self.processing_size).astype(dtype=numpy.float64))
+        iterationz = 0
         for i in range(self.channels):
             fft = numpy.fft.rfft(self.buffer[:, i])
             zeros = numpy.zeros_like(fft)
             band = numpy.zeros_like(fft)
             band[self.fftlow:self.ffthigh] = fft[self.fftlow:self.ffthigh]
-            band = numpy.fft.rfft(numba_fabada(numpy.fft.irfft(band), self.time, self.work, self.floor))
+            iteration, band1 = numba_fabada(numpy.fft.irfft(band), float(self.time), self.work, self.floor)
+            band = numpy.fft.rfft(band1)
             fft[self.fftlow:self.ffthigh] = band[self.fftlow:self.ffthigh]
             fft[self.ffthigh:] = zeros[self.ffthigh:]
             fft[:self.fftlow] = zeros[:self.fftlow]
             self.buffer2[:, i] = numpy.fft.irfft(fft)
+            iterationz = iterationz + iteration
+        self.iterations = iterationz
+        print(self.iterations)
+
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
 
 
@@ -346,7 +352,8 @@ class StreamSampler(object):
         self.work = 1.
         self.time = 495
         self.floor = 1
-        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.fftlow,self.ffthigh,self.work,self.time, self.floor)
+        self.iterations = 0
+        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.fftlow,self.ffthigh,self.work,self.time, self.floor,self.iterations)
         self.micindex = micindex
         self.speakerindex = speakerindex
         self.micstream = None
@@ -629,6 +636,7 @@ if __name__ == "__main__":
         dpg.add_text("Welcome to FABADA! Feel free to experiment.")
         dpg.add_text(f"Your speaker device is: ({SS.speakerdevice})")
         dpg.add_text(f"Your microphone device is:({SS.micdevice})")
+        #dpg.add_text(f"Your current iterations is:({SS.iterations})") # work in progress
 
         dpg.add_slider_int(label="FFTmin",tag="FFTmin", default_value=SS.fftlow, min_value=1, max_value=11025,
                            callback=fftminlog)
