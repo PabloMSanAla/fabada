@@ -26,7 +26,7 @@ conda install numba, scipy, numpy, pipwin, np_rw_buffer
 pip install pipwin
 pipwin install pyaudio #assuming you're on windows
 
-python thepythonfilename.pyw #assuming the python file is in the current directory
+pythonw.exe thepythonfilename.pyw #assuming the python file is in the current directory
 
 Usage:
 You'll need a line-in device or virtual audio cable you can configure so you can loop the output to input.
