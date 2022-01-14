@@ -13,7 +13,7 @@ of this license document, but changing it is not allowed.
 
 
 Instructions:
-Save the code as a .pyw file to disable the console. Save as a pw to enable it.
+SSave the code as a .pyw file to disable the console. Save as a pw to enable it.
 Install the latest miniforge for you into a folder, don't add it to path, launch it from start menu.
 Note: if python is installed elsewhere this may fail. If it fails, try this again with miniconda instead,
 as miniconda doesn't install packages to the system library locations.
@@ -23,10 +23,11 @@ https://github.com/conda-forge/miniforge/#download
 https://docs.conda.io/en/latest/miniconda.html
 (using miniforge command line window)
 conda install numba, scipy, numpy, pipwin, np_rw_buffer
-pip install pipwin
+pip install pipwin,dearpygui
 pipwin install pyaudio #assuming you're on windows
 
 pythonw.exe thepythonfilename.pyw #assuming the python file is in the current directory
+
 
 Usage:
 You'll need a line-in device or virtual audio cable you can configure so you can loop the output to input.
@@ -45,11 +46,13 @@ import numpy
 import pyaudio
 import numba
 from np_rw_buffer import AudioFramingBuffer
+from np_rw_buffer import RingBuffer
 from threading import Thread
 import math
 import time
 import dearpygui.dearpygui as dpg
-
+from numpy.lib import stride_tricks
+from matplotlib import pyplot as plt
 
 
 
@@ -250,7 +253,8 @@ def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float6
 
 
 class FilterRun(Thread):
-    def __init__(self, rb, pb, channels, processing_size, dtype,fftlow,ffthigh,work,time,floor,iterations):
+    def __init__(self, rb, pb, channels, processing_size, dtype,fftlow,ffthigh,work,time,floor,iterations,parent):
+        self.parent = parent
         super(FilterRun, self).__init__()
         self.running = True
         self.rb = rb
@@ -269,11 +273,6 @@ class FilterRun(Thread):
         self.floor = floor
         self.iterations = iterations
 
-        #The four lines below take a buffer of canvas rgb values, make them ready for dearpygui
-        #self.dirty = numpy.frombuffer(self.fig.canvas.tostring_rgb(), dtype=numpy.uint8) / 255
-        #self.dirty = self.dirty.reshape(self.fig.canvas.get_width_height()[::-1] + (3,))
-        #h, w = self.dirty.shape[:2]
-       # self.dirty1 = numpy.dstack((self.dirty, numpy.zeros((h, w), dtype=numpy.uint8) + 255))  # add alpha channel
 
     def write_filtered_data(self):
         # t = time.time()
@@ -291,6 +290,9 @@ class FilterRun(Thread):
             iterationz = iterationz + iteration
         self.iterations = iterationz
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
+        self.parent.threadcallbackprocessbuffers(self.buffer[:,0],self.buffer2[:,0])#if all goes well, this will call the parent function once a write to update the spectrogram
+                                                                                #its better not to do this if you use more than one thread, but we only do this in one thread
+
 
 
     def run(self):
@@ -338,6 +340,7 @@ class StreamSampler(object):
         # np_rw_buffer (AudioFramingBuffer offers a delay time)
         self._sample_rate = sample_rate
         self._channels = channels
+        self.ticker = 0
         # self.rb = RingBuffer((int(sample_rate) * 5, channels), dtype=numpy.dtype(dtype))
         self.rb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
                                      seconds=6,  # Buffer size (need larger than processing size)[seconds * sample_rate]
@@ -350,6 +353,14 @@ class StreamSampler(object):
                                               buffer_delay=0,
                                               # as long as fabada completes in O(n) of less than the sample size in time
                                               dtype=numpy.dtype(dtype))
+        self.cleanspectrogrambuffer = RingBuffer((480, 640, 4),dtype=numpy.uint8)
+        self.dirtyspectrogrambuffer = RingBuffer((640, 640, 4),dtype=numpy.uint8)
+        self.cleanspectrogrambuffer.maxsize = int(9900)
+        self.dirtyspectrogrambuffer.maxsize = int(9900)
+
+        #self.cleanspectrogrambuffer.set_data(data) TODO: create a spectrogram, get dimensions, make a template, make that the shape.
+        #self.dirtyspectrogrambuffer.set_data(data) TODO: create a spectrogram, get dimensions, make a template, make that the shape.
+
 
         self.fftlow = 20
         self.ffthigh = 11025
@@ -357,7 +368,7 @@ class StreamSampler(object):
         self.time = 495 #generally, set this to whatever timeframe you want it done in. 44100 samples = 500ms window.
         self.floor = 8192#unknown, seems to do better with higher values
         self.iterations = 0
-        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.fftlow,self.ffthigh,self.work,self.time, self.floor,self.iterations)
+        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.fftlow,self.ffthigh,self.work,self.time, self.floor,self.iterations,self)
         self.micindex = micindex
         self.speakerindex = speakerindex
         self.micstream = None
@@ -586,6 +597,43 @@ class StreamSampler(object):
 
     listen = stream_start  # Just set a new variable to the same method
 
+    def threadcallbackprocessbuffers(self,array1,array2):
+        fig, ax = plt.subplots()
+
+        powerSpectrum, frequenciesFound, time, imageAxis = ax.specgram(array1, Fs=self.sample_rate)
+
+        fig.canvas.draw()
+
+        data = numpy.frombuffer(fig.canvas.tostring_rgb(), dtype=numpy.uint8) / 255
+        data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        h, w = data.shape[:2]
+        data = numpy.dstack((data, numpy.zeros((h, w), dtype=numpy.uint8) + 255))  # add alpha channel
+        self.dirtyspectrogrambuffer.write(data) #move the buffer end
+        plt.clf()
+        plt.close(fig)
+        plt.close()
+
+
+        fig, ax = plt.subplots()
+        powerSpectrum, frequenciesFound, time, imageAxis = ax.specgram(array2, Fs=self.sample_rate)
+
+        fig = plt.figure()
+        fig.canvas.draw()
+
+        data = numpy.frombuffer(fig.canvas.tostring_rgb(), dtype=numpy.uint8) / 255
+        data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+        h, w = data.shape[:2]
+        data = numpy.dstack((data, numpy.zeros((h, w), dtype=numpy.uint8) + 255))  # add alpha channel
+        self.cleanspectrogrambuffer.write(data)
+        plt.clf()
+        plt.close(fig)
+        plt.close()
+
+        return
+
+        # The four lines below take a buffer of canvas rgb values, make them ready for dearpygui
+        #TODO: spectrogram work has to happen here. Can't happen in thread for some reason.
+        #so, whenever this function is called, make the spectrograms, write them into the buffers.
 
 if __name__ == "__main__":
     # after importing numpy, reset the CPU affinity of the parent process so
@@ -617,15 +665,67 @@ if __name__ == "__main__":
             dpg.set_value('FFTMax',SS.fftlow+1)
             SS.ffthigh = SS.fftlow+1
         SS.filterthread.ffthigh = SS.ffthigh
+
+
+    def update_spectrogram_textures():
+        #new_color = implement buffer read
+        if len(SS.dirtyspectrogrambuffer) < 640 * 2 or len(SS.cleanspectrogrambuffer) < 640 * 2:
+        #implement string setting here
+            return
+        dirty_data =  SS.dirtyspectrogrambuffer.read(640) #read a given amount and overlap the next read
+        clean_data =  SS.cleanspectrogrambuffer.read(640)#i dont know how much to overlap by.
+        dpg.set_value("dirty_texture", dirty_data)                  #perhaps updating once a frame is too often?
+        dpg.set_value("clean_texture", clean_data)
+
+
+
     def iter():
         dpg.set_value('iterations', f"Fabada current iterations: {SS.filterthread.iterations}")
+        update_spectrogram_textures() #update the screen contents once every 4 frames when using SS.Ticker.
 
 
+        #copy overlap the spectrogram ringbuffers here
+
+
+#notes:
+#future version will include two spectrograms.
+# https://stackoverflow.com/questions/6800984/how-to-pass-and-run-a-callback-method-in-python
+#each time we process a chunk, we'll also copy out the input and output from the thread to a callback function.
+#that callback function will be in the main SS program where the spectrograms will be generated and appended to an RGBA ringbuffer.
+#https://github.com/alakise/Audio-Spectrogram/blob/master/spectrogram.py
+#We will use an overlapping read to "scroll" the video content.
+#each time, we'll attempt to copy out what remains in the buffer from X point, and then increment X point.
+#if there isn't enough data, we'll just pause the feed and display a text message " samples are being dropped!"
+#below the textures. filling with "black" would be nice but will be more complex so we wont be doing that.
+#important variables to determine are the canvas height and width of the plot.
+#the height will tell us how high to make our texture. The width won't tell us how wide to make it-
+#but it will tell us how large the buffer needs to be.
     dpg.create_context()
-    dpg.create_viewport(title='FABADA Streamclean', height=200, width = 400)
+    dpg.create_viewport(title='FABADA Streamclean', height=1200, width=1200)
     dpg.setup_dearpygui()
-    #dpg.set_exit_callback(close())
-    with dpg.window(autosize=True, width = 500) as main_window:
+    dpg.configure_app(auto_device=True)
+
+    cleantexture = []
+    for i in range(0, 640 * 480):
+        cleantexture.append(255 / 255)
+        cleantexture.append(0)
+        cleantexture.append(255 / 255)
+        cleantexture.append(255 / 255)
+
+    dirtytexture = []
+    for i in range(0, 640 * 480):
+        dirtytexture.append(255 / 255)
+        dirtytexture.append(0)
+        dirtytexture.append(255 / 255)
+        cleantexture.append(255 / 255)
+
+    with dpg.texture_registry():
+        dpg.add_dynamic_texture(640, 480, dirtytexture, tag="dirty_texture")
+    with dpg.texture_registry():
+        dpg.add_dynamic_texture(600, 480, cleantexture, tag="clean_texture")
+
+
+    with dpg.window(autosize=True, width = 1200) as main_window:
         dpg.add_text("Welcome to FABADA! Feel free to experiment.")
         dpg.add_text(f"Your speaker device is: ({SS.speakerdevice})")
         dpg.add_text(f"Your microphone device is:({SS.micdevice})")
@@ -635,6 +735,10 @@ if __name__ == "__main__":
                            callback=fftminlog)
         dpg.add_slider_int(label="FFTMax",tag="FFTMax", default_value=SS.ffthigh, min_value=1, max_value=11025,
                            callback=fftmaxlog)
+        with dpg.group(horizontal=True):
+          dpg.add_image("dirty_texture")
+          dpg.add_image("clean_texture")
+
     dpg.set_primary_window(main_window,True)  # TODO: Added Primary window, so the dpg window fills the whole Viewport
 
     dpg.show_viewport()
