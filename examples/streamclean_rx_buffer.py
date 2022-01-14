@@ -58,7 +58,7 @@ from matplotlib import pyplot as plt
 
 
 @numba.jit(numba.types.Tuple((numba.int32, numba.float64[:]))(numba.float64[:], numba.float64, numba.float64,numba.float64), nopython=True, parallel=True, nogil=True,cache=True)
-def numba_fabada(data: [numpy.float64], timex: numpy.float64, work: numpy.float64,floor=numpy.float64):
+def numba_fabada(data: list[numpy.float64], timex: numpy.float64, work: numpy.float64,floor=numpy.float64):
     # notes:
     # The pythonic way to COPY an array is to do x[:] = y[:]
     # do x=y and it wont copy it, so any changes made to X will also be made to Y.
@@ -736,8 +736,8 @@ if __name__ == "__main__":
         dpg.add_slider_int(label="FFTMax",tag="FFTMax", default_value=SS.ffthigh, min_value=1, max_value=11025,
                            callback=fftmaxlog)
         with dpg.group(horizontal=True):
-          dpg.add_image("dirty_texture")
-          dpg.add_image("clean_texture")
+          #dpg.add_image("dirty_texture") #crashes the program
+          #dpg.add_image("clean_texture")
 
     dpg.set_primary_window(main_window,True)  # TODO: Added Primary window, so the dpg window fills the whole Viewport
 
