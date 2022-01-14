@@ -242,7 +242,24 @@ Citations and acknowledgement are vital for the continued work on this kind of a
 
 Please cite the following record if you used FABADA in any of your publications.
 
-We are currently working on publishing the paper, soon there will be a reference for it.
+@ARTICLE{2022arXiv220105145S,
+author = {{Sanchez-Alarcon}, Pablo M and {Ascasibar Sequeiros}, Yago},
+title = "{Fully Adaptive Bayesian Algorithm for Data Analysis, FABADA}",
+journal = {arXiv e-prints},
+keywords = {Astrophysics - Instrumentation and Methods for Astrophysics, Astrophysics - Astrophysics of Galaxies, Astrophysics - Solar and Stellar Astrophysics, Computer Science - Computer Vision and Pattern Recognition, Physics - Data Analysis, Statistics and Probability},
+year = 2022,
+month = jan,
+eid = {arXiv:2201.05145},
+pages = {arXiv:2201.05145},
+archivePrefix = {arXiv},
+eprint = {2201.05145},
+primaryClass = {astro-ph.IM},
+adsurl = {https://ui.adsabs.harvard.edu/abs/2022arXiv220105145S}
+}
+
+Sanchez-Alarcon, P. M. and Ascasibar Sequeiros, Y., “Fully Adaptive Bayesian Algorithm for Data Analysis, FABADA”, <i>arXiv e-prints</i>, 2022.
+
+https://arxiv.org/abs/2201.05145
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
