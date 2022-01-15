@@ -13,20 +13,22 @@ of this license document, but changing it is not allowed.
 
 
 Instructions:
-SSave the code as a .pyw file to disable the console. Save as a pw to enable it.
-Install the latest miniforge for you into a folder, don't add it to path, launch it from start menu.
+Save the code as a .pyw file to disable the console. Save as a .py to enable it.
+Install the latest miniforge for you into a folder, don't add it to path, launch it's command line from start menu.
 Note: if python is installed elsewhere this may fail. If it fails, try this again with miniconda instead,
-as miniconda doesn't install packages to the system library locations.
+as miniconda's pip doesn't install packages to the system library locations when python is installed.
 
 https://github.com/conda-forge/miniforge/#download
 
-https://docs.conda.io/en/latest/miniconda.html
 (using miniforge command line window)
-conda install numba, scipy, numpy, pipwin, np_rw_buffer
-pip install pipwin,dearpygui
-pipwin install pyaudio #assuming you're on windows
 
-pythonw.exe thepythonfilename.pyw #assuming the python file is in the current directory
+ conda create --name fabada --no-default-packages python=3.10
+ conda activate fabada
+ pip install pipwin, dearpygui, numba, np_rw_buffer ,matplotlib, opencv-python
+ pipwin install pyaudio
+ 
+ 
+pythonw.exe thepythonfilename.py #assuming the python file is in the current directory
 
 
 Usage:
