@@ -287,13 +287,14 @@ class FilterRun(Thread):
         # t = time.time()
         numpy.copyto(self.buffer, self.rb.read(self.processing_size).astype(dtype=numpy.float64))
 
-        Z, freqs, t = mlab.specgram(self.buffer[:, 0], NFFT=512, Fs=44100, detrend=None, window=None, noverlap=448,
+        Z, freqs, t = mlab.specgram(self.buffer[:, 0], NFFT=512, Fs=44100, detrend=None, window=None, noverlap=446,
                                     pad_to=None, sides=None, scale_by_freq=None, mode=None)
 
         Z = (255 * (Z - numpy.min(Z)) / numpy.ptp(Z)).astype(int)
         #https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
         norm = matplotlib.colors.Normalize(vmin=0, vmax=255)
         arr_color = cm.ScalarMappable(cmap="copper",norm=norm).to_rgba(Z, bytes=True)
+        arr_color = cv2.resize(arr_color, dsize=(660, 257), interpolation=cv2.INTER_CUBIC)
         arr_color = numpy.rot90(arr_color)#rotate it and jam it in the buffer lengthwise
         #arr_color = numpy.flipud(arr_color)
         self.dirtyspecbuf.growing_write(arr_color)
@@ -313,7 +314,7 @@ class FilterRun(Thread):
             zeros = numpy.zeros_like(fft)
             band = numpy.zeros_like(fft)
             band[self.fftlow:self.ffthigh] = fft[self.fftlow:self.ffthigh]
-            iteration, band1 = numba_fabada(numpy.fft.irfft(band), 380, self.work, self.floor)
+            iteration, band1 = numba_fabada(numpy.fft.irfft(band), 360.0, self.work, self.floor)
             band = numpy.fft.rfft(band1)
             zeros[self.fftlow:self.ffthigh] = band[self.fftlow:self.ffthigh]
             self.buffer2[:, i] = numpy.fft.irfft(zeros)
@@ -321,11 +322,12 @@ class FilterRun(Thread):
         self.iterations = iterationz
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
         # t = time.time()
-        Z, freqs, t = mlab.specgram(self.buffer2[:, 0], NFFT=512, Fs=44100.0, detrend=None, window=None, noverlap=448,
+        Z, freqs, t = mlab.specgram(self.buffer2[:, 0], NFFT=512, Fs=44100.0, detrend=None, window=None, noverlap=446,
                                     pad_to=None, scale_by_freq=None, mode=None)
         Z = (255 * (Z - numpy.min(Z)) / numpy.ptp(Z)).astype(int)
         # https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
         arr_color = cm.ScalarMappable(cmap="copper",norm=norm).to_rgba(Z, bytes=True)
+        arr_color = cv2.resize(arr_color, dsize=(660, 257), interpolation=cv2.INTER_CUBIC)
         arr_color = numpy.rot90(arr_color)#rotate it and jam it in the buffer lengthwise
         self.cleanspecbuf.growing_write(arr_color)
 
@@ -387,8 +389,8 @@ class StreamSampler(object):
                                               buffer_delay=0,
                                               # as long as fabada completes in O(n) of less than the sample size in time
                                               dtype=numpy.dtype(dtype))
-        self.cleanspectrogrambuffer = RingBuffer((682, 257, 4),dtype=numpy.uint8)
-        self.dirtyspectrogrambuffer = RingBuffer((682, 257, 4),dtype=numpy.uint8)
+        self.cleanspectrogrambuffer = RingBuffer((660, 257, 4),dtype=numpy.uint8)
+        self.dirtyspectrogrambuffer = RingBuffer((660, 257, 4),dtype=numpy.uint8)
         self.cleanspectrogrambuffer.maxsize = int(9900)
         self.dirtyspectrogrambuffer.maxsize = int(9900)
 
@@ -665,14 +667,13 @@ if __name__ == "__main__":
 
     def update_spectrogram_textures():
         #new_color = implement buffer read
-        if len(SS.dirtyspectrogrambuffer) < 682 * 2 or len(SS.cleanspectrogrambuffer) < 682 * 2:
+        if len(SS.dirtyspectrogrambuffer) < 660 * 2 or len(SS.cleanspectrogrambuffer) < 660 * 2:
             return
-        dirty_data = SS.dirtyspectrogrambuffer.read_overlap(682,11)
+        dirty_data = SS.dirtyspectrogrambuffer.read_overlap(660,11)
         dirty_data = cv2.rotate(dirty_data, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        clean_data = SS.cleanspectrogrambuffer.read_overlap(682, 11)
+        clean_data = SS.cleanspectrogrambuffer.read_overlap(660,11)
         clean_data = cv2.rotate(clean_data, cv2.ROTATE_90_COUNTERCLOCKWISE)
         #dirty_data =  cv2.flip(SS.dirtyspectrogrambuffer.read_overlap(682,4),0)#read a given amount and overlap the next read
-        #print(dirty_data,dirty_data.shape)
         #clean_data =  cv2.flip(SS.cleanspectrogrambuffer.read_overlap(682,4),0)#i dont know how much to overlap by.
         dpg.set_value("dirty_texture", dirty_data)                  #perhaps updating once a frame is too often?
         dpg.set_value("clean_texture", clean_data)
@@ -710,14 +711,14 @@ if __name__ == "__main__":
     dpg.setup_dearpygui()
     dpg.configure_app(auto_device=True)
 
-    cleantexture = [1, 1, 0, 1] * 682 * 257
-    dirtytexture = [1, 0, 1, 1] * 682 * 257
+    cleantexture = [1, 1, 0, 1] * 660 * 257
+    dirtytexture = [1, 0, 1, 1] * 660 * 257
     #patch from joviex- the enumeration in the online docs showing .append doesn't work for larger textures
 
     with dpg.texture_registry():
-        dpg.add_dynamic_texture(682, 257, dirtytexture, tag="dirty_texture")
+        dpg.add_dynamic_texture(660, 257, dirtytexture, tag="dirty_texture")
     with dpg.texture_registry():
-        dpg.add_dynamic_texture(682, 257, cleantexture, tag="clean_texture")
+        dpg.add_dynamic_texture(660, 257, cleantexture, tag="clean_texture")
 
 
     with dpg.window(autosize=True, width = 700) as main_window:
