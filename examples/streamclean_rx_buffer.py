@@ -280,26 +280,24 @@ class FilterRun(Thread):
         self.dirtyspecbuf = dirty
         self.cleanspecbuf = clean
         self.enabled = run
+        self.NFFT = 512
+        self.noverlap=446
 
 
 
     def write_filtered_data(self):
         # t = time.time()
         numpy.copyto(self.buffer, self.rb.read(self.processing_size).astype(dtype=numpy.float64))
+        #self.buffer contains (44100,2) of numpy.float32 audio values sampled with pyaudio
+        Z, freqs, t = mlab.specgram(self.buffer[:, 0], NFFT=self.NFFT, Fs=44100, detrend=None, window=None, noverlap=self.noverlap,
+                                    pad_to=None, sides=None, scale_by_freq=None, mode="magnitude")
 
-        Z, freqs, t = mlab.specgram(self.buffer[:, 0], NFFT=512, Fs=44100, detrend=None, window=None, noverlap=446,
-                                    pad_to=None, sides=None, scale_by_freq=None, mode=None)
-
-        Z = (255 * (Z - numpy.min(Z)) / numpy.ptp(Z)).astype(int)
         #https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
-        norm = matplotlib.colors.Normalize(vmin=0, vmax=255)
-        arr_color = cm.ScalarMappable(cmap="copper",norm=norm).to_rgba(Z, bytes=True)
-        arr_color = cv2.resize(arr_color, dsize=(660, 257), interpolation=cv2.INTER_CUBIC)
+        arr_color = cm.ScalarMappable(cmap="turbo").to_rgba(Z, bytes=False,norm=True)
+        arr_color = cv2.resize(arr_color, dsize=(120, 257), interpolation=cv2.INTER_CUBIC)
         arr_color = numpy.rot90(arr_color)#rotate it and jam it in the buffer lengthwise
-        #arr_color = numpy.flipud(arr_color)
         self.dirtyspecbuf.growing_write(arr_color)
-        #print(arr_color,arr_color.shape)
-
+        #buffer receives the image translated and on the other end it's reversed and appended a few lines at a time to a texture
 
 
 
@@ -323,11 +321,11 @@ class FilterRun(Thread):
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
         # t = time.time()
         Z, freqs, t = mlab.specgram(self.buffer2[:, 0], NFFT=512, Fs=44100.0, detrend=None, window=None, noverlap=446,
-                                    pad_to=None, scale_by_freq=None, mode=None)
-        Z = (255 * (Z - numpy.min(Z)) / numpy.ptp(Z)).astype(int)
+                                    pad_to=None, scale_by_freq=None, mode="magnitude")
         # https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
-        arr_color = cm.ScalarMappable(cmap="copper",norm=norm).to_rgba(Z, bytes=True)
-        arr_color = cv2.resize(arr_color, dsize=(660, 257), interpolation=cv2.INTER_CUBIC)
+        arr_color = cm.ScalarMappable(cmap="turbo").to_rgba(Z, bytes=False,norm=True)
+        arr_color = cv2.resize(arr_color, dsize=(120, 257), interpolation=cv2.INTER_CUBIC)
+
         arr_color = numpy.rot90(arr_color)#rotate it and jam it in the buffer lengthwise
         self.cleanspecbuf.growing_write(arr_color)
 
@@ -389,8 +387,8 @@ class StreamSampler(object):
                                               buffer_delay=0,
                                               # as long as fabada completes in O(n) of less than the sample size in time
                                               dtype=numpy.dtype(dtype))
-        self.cleanspectrogrambuffer = RingBuffer((660, 257, 4),dtype=numpy.uint8)
-        self.dirtyspectrogrambuffer = RingBuffer((660, 257, 4),dtype=numpy.uint8)
+        self.cleanspectrogrambuffer = RingBuffer((660, 257, 4),dtype=numpy.float32)
+        self.dirtyspectrogrambuffer = RingBuffer((660, 257, 4),dtype=numpy.float32)
         self.cleanspectrogrambuffer.maxsize = int(9900)
         self.dirtyspectrogrambuffer.maxsize = int(9900)
 
@@ -669,9 +667,9 @@ if __name__ == "__main__":
         #new_color = implement buffer read
         if len(SS.dirtyspectrogrambuffer) < 660 * 2 or len(SS.cleanspectrogrambuffer) < 660 * 2:
             return
-        dirty_data = SS.dirtyspectrogrambuffer.read_overlap(660,11)
+        dirty_data = SS.dirtyspectrogrambuffer.read_overlap(660,2)
         dirty_data = cv2.rotate(dirty_data, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        clean_data = SS.cleanspectrogrambuffer.read_overlap(660,11)
+        clean_data = SS.cleanspectrogrambuffer.read_overlap(660,2)
         clean_data = cv2.rotate(clean_data, cv2.ROTATE_90_COUNTERCLOCKWISE)
         #dirty_data =  cv2.flip(SS.dirtyspectrogrambuffer.read_overlap(682,4),0)#read a given amount and overlap the next read
         #clean_data =  cv2.flip(SS.cleanspectrogrambuffer.read_overlap(682,4),0)#i dont know how much to overlap by.
