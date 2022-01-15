@@ -259,7 +259,7 @@ def numba_fabada(data: list[numpy.float64], timex: numpy.float64, work: numpy.fl
 
 
 class FilterRun(Thread):
-    def __init__(self, rb, pb, channels, processing_size, dtype,fftlow,ffthigh,work,time,floor,iterations,dirty,clean):
+    def __init__(self, rb, pb, channels, processing_size, dtype,fftlow,ffthigh,work,time,floor,iterations,dirty,clean,run):
         super(FilterRun, self).__init__()
         self.running = True
         self.rb = rb
@@ -279,20 +279,24 @@ class FilterRun(Thread):
         self.iterations = iterations
         self.dirtyspecbuf = dirty
         self.cleanspecbuf = clean
+        self.enabled = run
 
 
 
     def write_filtered_data(self):
         # t = time.time()
         numpy.copyto(self.buffer, self.rb.read(self.processing_size).astype(dtype=numpy.float64))
+
         Z, freqs, t = mlab.specgram(self.buffer[:, 0], NFFT=512, Fs=44100, detrend=None, window=None, noverlap=448,
                                     pad_to=None, sides=None, scale_by_freq=None, mode=None)
 
-        Z = (Z - numpy.min(Z))/numpy.ptp(Z)
+        Z = (255 * (Z - numpy.min(Z)) / numpy.ptp(Z)).astype(int)
         #https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
-        arr_color = cm.ScalarMappable(cmap="copper").to_rgba(Z, bytes=True)
+        norm = matplotlib.colors.Normalize(vmin=0, vmax=255)
+        arr_color = cm.ScalarMappable(cmap="copper",norm=norm).to_rgba(Z, bytes=True)
+        arr_color = numpy.rot90(arr_color)#rotate it and jam it in the buffer lengthwise
         #arr_color = numpy.flipud(arr_color)
-        self.dirtyspecbuf.write(arr_color)
+        self.dirtyspecbuf.growing_write(arr_color)
         #print(arr_color,arr_color.shape)
 
 
@@ -300,6 +304,10 @@ class FilterRun(Thread):
 
         #callbackmain(self.buffer[:, 0],0)
         iterationz = 0
+        if self.enabled == False:
+            self.processedrb.write(self.buffer.astype(dtype=self.dtype), error=True)
+            self.cleanspecbuf.growing_write(arr_color)
+            return
         for i in range(self.channels):
             fft = numpy.fft.rfft(self.buffer[:, i])
             zeros = numpy.zeros_like(fft)
@@ -315,33 +323,11 @@ class FilterRun(Thread):
         # t = time.time()
         Z, freqs, t = mlab.specgram(self.buffer2[:, 0], NFFT=512, Fs=44100.0, detrend=None, window=None, noverlap=448,
                                     pad_to=None, scale_by_freq=None, mode=None)
-        Z = (Z - numpy.min(Z)) / numpy.ptp(Z)
+        Z = (255 * (Z - numpy.min(Z)) / numpy.ptp(Z)).astype(int)
         # https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
-        arr_color = cm.ScalarMappable(cmap="copper").to_rgba(Z, bytes=True)
-        #arr_color = numpy.flipud(arr_color)
-
-        self.cleanspecbuf.write(arr_color)
-        #print(arr_color, arr_color.shape)
-
-        #callbackmain(self.buffer2[:, 0],1)
-        #fig, ax = plt.subplots() #the below code does not work unless this line is included.
-        #powerSpectrum, frequenciesFound, time, imageAxis = ax.specgram(sample_array,NFFT=1024, Fs=44100,noverlap=900)#cant do this outside of main thread
-        #fig.canvas.draw()  # required for the buffer call
-        #fig.canvas.flush_events()
-        #w, h = fig.canvas.get_width_height()
-        #data = numpy.frombuffer(fig.canvas.tostring_argb(), dtype=numpy.uint8) / 255
-        #data.shape = (w, h, 4)
-        #data = numpy.roll(data, 3, axis=2)
-        ## https://web-backend.icare.univ-lille.fr/tutorials/convert_a_matplotlib_figure
-       # print(data.shape) #prints (640,480,4) 0 this data is now formatted ideally for dearpygui's dynamic texture inpainting
-        #  if which == 0:
-        #      self.dirty.write(data)
-        #  if which == 1:
-        #      self.clean.write(data)
-        #   plt.clf()
-        # plt.close(self.fig)
-
-
+        arr_color = cm.ScalarMappable(cmap="copper",norm=norm).to_rgba(Z, bytes=True)
+        arr_color = numpy.rot90(arr_color)#rotate it and jam it in the buffer lengthwise
+        self.cleanspecbuf.growing_write(arr_color)
 
     def run(self):
         while self.running:
@@ -401,8 +387,8 @@ class StreamSampler(object):
                                               buffer_delay=0,
                                               # as long as fabada completes in O(n) of less than the sample size in time
                                               dtype=numpy.dtype(dtype))
-        self.cleanspectrogrambuffer = RingBuffer((257, 682, 4),dtype=numpy.uint8)
-        self.dirtyspectrogrambuffer = RingBuffer((257, 682, 4),dtype=numpy.uint8)
+        self.cleanspectrogrambuffer = RingBuffer((682, 257, 4),dtype=numpy.uint8)
+        self.dirtyspectrogrambuffer = RingBuffer((682, 257, 4),dtype=numpy.uint8)
         self.cleanspectrogrambuffer.maxsize = int(9900)
         self.dirtyspectrogrambuffer.maxsize = int(9900)
 
@@ -413,14 +399,14 @@ class StreamSampler(object):
         self.time = 495 #generally, set this to whatever timeframe you want it done in. 44100 samples = 500ms window.
         self.floor = 8192#unknown, seems to do better with higher values
         self.iterations = 0
-        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.fftlow,self.ffthigh,self.work,self.time, self.floor,self.iterations,self.dirtyspectrogrambuffer,self.cleanspectrogrambuffer)
+        self.enabled = True
+        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.fftlow,self.ffthigh,self.work,self.time, self.floor,self.iterations,self.dirtyspectrogrambuffer,self.cleanspectrogrambuffer,self.enabled)
         self.micindex = micindex
         self.speakerindex = speakerindex
         self.micstream = None
         self.speakerstream = None
         self.speakerdevice = ""
         self.micdevice = ""
-
 
 
         # Set inputs for inheritance
@@ -681,8 +667,13 @@ if __name__ == "__main__":
         #new_color = implement buffer read
         if len(SS.dirtyspectrogrambuffer) < 682 * 2 or len(SS.cleanspectrogrambuffer) < 682 * 2:
             return
-        dirty_data =  cv2.flip(SS.dirtyspectrogrambuffer.read_overlap(682,11),0)#read a given amount and overlap the next read
-        clean_data =  cv2.flip(SS.cleanspectrogrambuffer.read_overlap(682,11),0)#i dont know how much to overlap by.
+        dirty_data = SS.dirtyspectrogrambuffer.read_overlap(682,11)
+        dirty_data = cv2.rotate(dirty_data, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        clean_data = SS.cleanspectrogrambuffer.read_overlap(682, 11)
+        clean_data = cv2.rotate(clean_data, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        #dirty_data =  cv2.flip(SS.dirtyspectrogrambuffer.read_overlap(682,4),0)#read a given amount and overlap the next read
+        #print(dirty_data,dirty_data.shape)
+        #clean_data =  cv2.flip(SS.cleanspectrogrambuffer.read_overlap(682,4),0)#i dont know how much to overlap by.
         dpg.set_value("dirty_texture", dirty_data)                  #perhaps updating once a frame is too often?
         dpg.set_value("clean_texture", clean_data)
 
@@ -692,8 +683,13 @@ if __name__ == "__main__":
         dpg.set_value('iterations', f"Fabada current iterations: {SS.filterthread.iterations}")
         update_spectrogram_textures() #update the screen contents once every 4 frames when using SS.Ticker.
 
-
-        #copy overlap the spectrogram ringbuffers here
+    def fabadatoggle(sender, app_data,user_data):
+        if SS.filterthread.enabled == True:
+            dpg.set_item_label("toggleswitch", "Enable")
+            SS.filterthread.enabled = False
+        else:
+            dpg.set_item_label("toggleswitch", "Disable")
+            SS.filterthread.enabled = True
 
 
 #notes:
@@ -729,6 +725,7 @@ if __name__ == "__main__":
         dpg.add_text(f"Your speaker device is: ({SS.speakerdevice})")
         dpg.add_text(f"Your microphone device is:({SS.micdevice})")
         dpg.add_text("Fabada current iterations: 0",tag="iterations")
+        dpg.add_button(label="Disable", tag="toggleswitch", callback=fabadatoggle)
         dpg.add_slider_int(label="FFTmin", tag="FFTmin", default_value=SS.fftlow, min_value=1,
                            max_value=11025,
                            callback=fftminlog)
