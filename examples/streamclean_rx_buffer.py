@@ -23,7 +23,7 @@ https://github.com/conda-forge/miniforge/#download
 https://docs.conda.io/en/latest/miniconda.html
 (using miniforge command line window)
 conda install numba, scipy, numpy, pipwin, np_rw_buffer
-pip install pipwin,dearpygui,pyqtgraph
+pip install pipwin,dearpygui
 pipwin install pyaudio #assuming you're on windows
 
 pythonw.exe thepythonfilename.pyw #assuming the python file is in the current directory
@@ -42,16 +42,22 @@ Additional thanks to Justin Engel.
 """
 
 from __future__ import division
+
+import matplotlib
 import numpy
 import pyaudio
 import numba
+from matplotlib import mlab, rcParams
 from np_rw_buffer import AudioFramingBuffer
 from np_rw_buffer import RingBuffer
 from threading import Thread
 import math
 import time
 import dearpygui.dearpygui as dpg
-#import pyqtgraph
+import matplotlib.image as mimage
+import matplotlib.colors as colors
+from matplotlib import cm
+import cv2
 
 
 
@@ -253,8 +259,7 @@ def numba_fabada(data: list[numpy.float64], timex: numpy.float64, work: numpy.fl
 
 
 class FilterRun(Thread):
-    def __init__(self, rb, pb, channels, processing_size, dtype,fftlow,ffthigh,work,time,floor,iterations,parent):
-        self.parent = parent
+    def __init__(self, rb, pb, channels, processing_size, dtype,fftlow,ffthigh,work,time,floor,iterations,dirty,clean):
         super(FilterRun, self).__init__()
         self.running = True
         self.rb = rb
@@ -272,12 +277,27 @@ class FilterRun(Thread):
         self.time = time
         self.floor = floor
         self.iterations = iterations
+        self.dirtyspecbuf = dirty
+        self.cleanspecbuf = clean
 
 
 
     def write_filtered_data(self):
         # t = time.time()
         numpy.copyto(self.buffer, self.rb.read(self.processing_size).astype(dtype=numpy.float64))
+        Z, freqs, t = mlab.specgram(self.buffer[:, 0], NFFT=512, Fs=44100, detrend=None, window=None, noverlap=448,
+                                    pad_to=None, sides=None, scale_by_freq=None, mode=None)
+
+        Z = (Z - numpy.min(Z))/numpy.ptp(Z)
+        #https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
+        arr_color = cm.ScalarMappable(cmap="copper").to_rgba(Z, bytes=True)
+        #arr_color = numpy.flipud(arr_color)
+        self.dirtyspecbuf.write(arr_color)
+        #print(arr_color,arr_color.shape)
+
+
+
+
         #callbackmain(self.buffer[:, 0],0)
         iterationz = 0
         for i in range(self.channels):
@@ -285,13 +305,24 @@ class FilterRun(Thread):
             zeros = numpy.zeros_like(fft)
             band = numpy.zeros_like(fft)
             band[self.fftlow:self.ffthigh] = fft[self.fftlow:self.ffthigh]
-            iteration, band1 = numba_fabada(numpy.fft.irfft(band), 495, self.work, self.floor)
+            iteration, band1 = numba_fabada(numpy.fft.irfft(band), 380, self.work, self.floor)
             band = numpy.fft.rfft(band1)
             zeros[self.fftlow:self.ffthigh] = band[self.fftlow:self.ffthigh]
             self.buffer2[:, i] = numpy.fft.irfft(zeros)
             iterationz = iterationz + iteration
         self.iterations = iterationz
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
+        # t = time.time()
+        Z, freqs, t = mlab.specgram(self.buffer2[:, 0], NFFT=512, Fs=44100.0, detrend=None, window=None, noverlap=448,
+                                    pad_to=None, scale_by_freq=None, mode=None)
+        Z = (Z - numpy.min(Z)) / numpy.ptp(Z)
+        # https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
+        arr_color = cm.ScalarMappable(cmap="copper").to_rgba(Z, bytes=True)
+        #arr_color = numpy.flipud(arr_color)
+
+        self.cleanspecbuf.write(arr_color)
+        #print(arr_color, arr_color.shape)
+
         #callbackmain(self.buffer2[:, 0],1)
         #fig, ax = plt.subplots() #the below code does not work unless this line is included.
         #powerSpectrum, frequenciesFound, time, imageAxis = ax.specgram(sample_array,NFFT=1024, Fs=44100,noverlap=900)#cant do this outside of main thread
@@ -304,9 +335,9 @@ class FilterRun(Thread):
         ## https://web-backend.icare.univ-lille.fr/tutorials/convert_a_matplotlib_figure
        # print(data.shape) #prints (640,480,4) 0 this data is now formatted ideally for dearpygui's dynamic texture inpainting
         #  if which == 0:
-        #      SS.dirtyspectrogrambuffer.write(data)
+        #      self.dirty.write(data)
         #  if which == 1:
-        #      SS.cleanspectrogrambuffer.write(data)
+        #      self.clean.write(data)
         #   plt.clf()
         # plt.close(self.fig)
 
@@ -370,8 +401,8 @@ class StreamSampler(object):
                                               buffer_delay=0,
                                               # as long as fabada completes in O(n) of less than the sample size in time
                                               dtype=numpy.dtype(dtype))
-        self.cleanspectrogrambuffer = RingBuffer((640, 480, 4),dtype=numpy.uint8)
-        self.dirtyspectrogrambuffer = RingBuffer((640, 480, 4),dtype=numpy.uint8)
+        self.cleanspectrogrambuffer = RingBuffer((257, 682, 4),dtype=numpy.uint8)
+        self.dirtyspectrogrambuffer = RingBuffer((257, 682, 4),dtype=numpy.uint8)
         self.cleanspectrogrambuffer.maxsize = int(9900)
         self.dirtyspectrogrambuffer.maxsize = int(9900)
 
@@ -382,7 +413,7 @@ class StreamSampler(object):
         self.time = 495 #generally, set this to whatever timeframe you want it done in. 44100 samples = 500ms window.
         self.floor = 8192#unknown, seems to do better with higher values
         self.iterations = 0
-        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.fftlow,self.ffthigh,self.work,self.time, self.floor,self.iterations,self)
+        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.fftlow,self.ffthigh,self.work,self.time, self.floor,self.iterations,self.dirtyspectrogrambuffer,self.cleanspectrogrambuffer)
         self.micindex = micindex
         self.speakerindex = speakerindex
         self.micstream = None
@@ -648,10 +679,10 @@ if __name__ == "__main__":
 
     def update_spectrogram_textures():
         #new_color = implement buffer read
-        if len(SS.dirtyspectrogrambuffer) < 640 * 2 or len(SS.cleanspectrogrambuffer) < 640 * 2:
+        if len(SS.dirtyspectrogrambuffer) < 682 * 2 or len(SS.cleanspectrogrambuffer) < 682 * 2:
             return
-        dirty_data =  SS.dirtyspectrogrambuffer.read(640) #read a given amount and overlap the next read
-        clean_data =  SS.cleanspectrogrambuffer.read(640)#i dont know how much to overlap by.
+        dirty_data =  cv2.flip(SS.dirtyspectrogrambuffer.read_overlap(682,11),0)#read a given amount and overlap the next read
+        clean_data =  cv2.flip(SS.cleanspectrogrambuffer.read_overlap(682,11),0)#i dont know how much to overlap by.
         dpg.set_value("dirty_texture", dirty_data)                  #perhaps updating once a frame is too often?
         dpg.set_value("clean_texture", clean_data)
 
@@ -679,21 +710,21 @@ if __name__ == "__main__":
 #the height will tell us how high to make our texture. The width won't tell us how wide to make it-
 #but it will tell us how large the buffer needs to be.
     dpg.create_context()
-    dpg.create_viewport(title='FABADA Streamclean', height=1200, width=1200)
+    dpg.create_viewport(title='FABADA Streamclean', height=700, width=700)
     dpg.setup_dearpygui()
     dpg.configure_app(auto_device=True)
 
-    cleantexture = [1, 1, 0, 1] * 640 * 480
-    dirtytexture = [1, 0, 1, 1] * 640 * 480
+    cleantexture = [1, 1, 0, 1] * 682 * 257
+    dirtytexture = [1, 0, 1, 1] * 682 * 257
     #patch from joviex- the enumeration in the online docs showing .append doesn't work for larger textures
 
     with dpg.texture_registry():
-        dpg.add_dynamic_texture(640, 480, dirtytexture, tag="dirty_texture")
+        dpg.add_dynamic_texture(682, 257, dirtytexture, tag="dirty_texture")
     with dpg.texture_registry():
-        dpg.add_dynamic_texture(640, 480, cleantexture, tag="clean_texture")
+        dpg.add_dynamic_texture(682, 257, cleantexture, tag="clean_texture")
 
 
-    with dpg.window(autosize=True, width = 1200) as main_window:
+    with dpg.window(autosize=True, width = 700) as main_window:
         dpg.add_text("Welcome to FABADA! Feel free to experiment.")
         dpg.add_text(f"Your speaker device is: ({SS.speakerdevice})")
         dpg.add_text(f"Your microphone device is:({SS.micdevice})")
@@ -705,9 +736,8 @@ if __name__ == "__main__":
                            max_value=11025,
                            callback=fftmaxlog)
 
-        with dpg.group(horizontal=True):
-            dpg.add_image("dirty_texture")
-            dpg.add_image("clean_texture")
+        dpg.add_image("dirty_texture")
+        dpg.add_image("clean_texture")
 
     dpg.set_primary_window(main_window,True)  # TODO: Added Primary window, so the dpg window fills the whole Viewport
 
