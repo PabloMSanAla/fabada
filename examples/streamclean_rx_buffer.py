@@ -332,11 +332,11 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
         chi2_pdf_previous = chi2_pdf
         chi2_pdf_derivative_previous = chi2_pdf_derivative
         evidence_previous = evidence_derivative
+        iterations = iterations +  1
 
         with numba.objmode(current=numba.float64):
            current = time.time()
         timerun = (current - start) * 1000
-        iterations += 1
         if (
                 ((chi2_data > true_count and chi2_pdf_snd_derivative >= 0)
                 and (evidence_derivative < 0)
@@ -787,9 +787,10 @@ if __name__ == "__main__":
 
     def update_spectrogram_textures():
         # new_color = implement buffer read
-        if len(SS.cleanspectrogrambuffer) < 60:
-            return
-        SS.texture2 = shift3dximg(SS.texture2, -1, numpy.rot90(SS.cleanspectrogrambuffer.read(1), 1))
+        if len(SS.cleanspectrogrambuffer) > 60:
+            SS.texture2 = shift3dximg(SS.texture2, -1, numpy.rot90(SS.cleanspectrogrambuffer.read(1), 1))
+        if len(SS.cleanspectrogrambuffer) > 180: #clearly this is wrooong
+            discard = SS.cleanspectrogrambuffer.read(1) #sneakily throw away rows until we're back to sanity
 
 
 
