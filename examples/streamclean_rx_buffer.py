@@ -198,13 +198,13 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
 
     data_est = data[boolv == True]
     data_mean = numpy.mean(data_est)  # get the mean, but only for the data that's not windowed
+ 
     true_count = data_est.size
     data_variance = numpy.zeros_like(data)
     for i in numba.prange(N):
         if boolv[i]:
-            data_variance[i] =  true_count +((numpy.abs(data_mean - data[i]) + true_count) ** 2) #normalize BEFORE variance
-        else:
-            data_variance[i] = 0.0  ##don't record variance from the artificial mean outside the passband
+            data_variance[i] =  data_mean  + ((numpy.abs(data_mean - data[i])) ** 2) #normalize BEFORE variance
+
 
 
     posterior_mean[:] = data[:]
@@ -236,7 +236,7 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
     chi2_pdf_derivative_previous: float = 0.0
 
     # do df calculation for chi2 residues
-    df = 5
+    df = true_count 
     z = (2. * math.lgamma(df / 2.))
 
     while 1:
@@ -343,9 +343,7 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
            current = time.time()
         timerun = (current - start) * 1000
         if (
-                ((chi2_data > true_count and chi2_pdf_snd_derivative >= 0)
-                and (evidence_derivative < 0)
-                and (iterations > 100))
+                (chi2_data > true_count and chi2_pdf_snd_derivative >= 0 and evidence_derivative < 0 and iterations > 48)
                 or (int(timerun) > int(timex))  # use no more than the time allocated per cycle
                 or (iterations > 400)#don't overfit the data
         ):
@@ -411,7 +409,7 @@ class FilterRun(Thread):
 
             # https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
             arr_color = self.SM.to_rgba(Z, bytes=False, norm=True)
-            arr_color = arr_color[:50, :, :]  # we just want the last bits where the specgram data lies.
+            arr_color = arr_color[:30, :, :]  # we just want the last bits where the specgram data lies.
             arr_color = snowy.resize(arr_color, width=60, height=100)  # in the future, this width will be 60.
             arr_color = numpy.rot90(arr_color)  # rotate it and jam it in the buffer lengthwise
             self.cleanspecbuf.growing_write(arr_color)
@@ -422,18 +420,21 @@ class FilterRun(Thread):
             zeros = numpy.zeros_like(fft)
             band = numpy.zeros_like(fft)
             band2 = numpy.zeros_like(fft)
+            band4 = numpy.zeros_like(fft)
+            band[21:1024] = fft[21:1024]
+            band2[1024:3072] = fft[1024:3072]
+            band4[3072:8192] = fft[3072:8192]
 
-            band[21:1000] = fft[21:1000]
-            band2[1000:7600] = fft[1000:7600]
-
-            iteration, band = numba_fabada(numpy.fft.irfft(band), 180.0, self.work, self.floor)
-            iteration2, band2 = numba_fabada(numpy.fft.irfft(band2), 180.0, self.work, self.floor)
+            iteration,  band = numba_fabada(numpy.fft.irfft(band),   140.0, self.work, self.floor)
+            iteration2, band2 = numba_fabada(numpy.fft.irfft(band2), 140.0, self.work, self.floor)
+            iteration2, band4 = numba_fabada(numpy.fft.irfft(band4), 140.0, self.work, self.floor)
             #use multiple FFT to give fabada a little bit better chance to estimate correctly
-            band2 = numpy.fft.rfft(band2)
             band = numpy.fft.rfft(band)
-            zeros[21:1000] = band[21:1000]
-            zeros[1000:7600] = band2[1000:7600]
-
+            band2 = numpy.fft.rfft(band2)
+            band4 = numpy.fft.rfft(band4)
+            zeros[21:1024] = band[21:1024]
+            zeros[1024:3072] = band2[1024:3072]
+            zeros[3072:8192] = band4[3072:8192]
             self.buffer2[:, i] = numpy.fft.irfft(zeros)
             iterationz = iterationz + iteration
 
