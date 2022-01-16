@@ -24,7 +24,7 @@ https://github.com/conda-forge/miniforge/#download
 
  conda create --name fabada --no-default-packages python=3.10
  conda activate fabada
- pip install pipwin, dearpygui, numba, np_rw_buffer,matplotlib, snowy,maad
+ pip install pipwin, dearpygui, numba, np_rw_buffer,matplotlib, snowy
  pipwin install pyaudio
 
 
