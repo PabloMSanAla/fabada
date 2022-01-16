@@ -203,7 +203,7 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
     data_variance = numpy.zeros_like(data)
     for i in numba.prange(N):
         if boolv[i]:
-            data_variance[i] =  data_mean  + ((numpy.abs(data_mean - data[i])) ** 2) #normalize BEFORE variance
+            data_variance[i] =  data_mean  + ((numpy.abs(data_mean - data[i])) *2) #normalize BEFORE variance
 
 
 
@@ -426,8 +426,8 @@ class FilterRun(Thread):
             band4[3072:8192] = fft[3072:8192]
 
             iteration,  band = numba_fabada(numpy.fft.irfft(band),   140.0, self.work, self.floor)
-            iteration2, band2 = numba_fabada(numpy.fft.irfft(band2), 140.0, self.work, self.floor)
-            iteration2, band4 = numba_fabada(numpy.fft.irfft(band4), 140.0, self.work, self.floor)
+            iteration2, band2 = numba_fabada(numpy.fft.irfft(band2), 30, self.work, self.floor)
+            iteration2, band4 = numba_fabada(numpy.fft.irfft(band4), 20, self.work, self.floor)
             #use multiple FFT to give fabada a little bit better chance to estimate correctly
             band = numpy.fft.rfft(band)
             band2 = numpy.fft.rfft(band2)
