@@ -57,455 +57,12 @@ import time
 from time import sleep
 import dearpygui.dearpygui as dpg
 import snowy
-from collections.abc import Mapping, MutableMapping
-import numpy as np
-from numpy import ma
-
-import matplotlib as mpl
-from matplotlib import _api, colors, cbook
-from matplotlib._cm import datad
-from matplotlib._cm_listed import cmaps as cmaps_listed
-
-
-@_api.caching_module_getattr  # module-level deprecations
-class __getattr__:
-    LUTSIZE = _api.deprecated(
-        "3.5", obj_type="", alternative="rcParams['image.lut']")(
-            property(lambda self: _LUTSIZE))
-
-
-_LUTSIZE = mpl.rcParams['image.lut']
-
-
-def _gen_cmap_registry():
-    """
-    Generate a dict mapping standard colormap names to standard colormaps, as
-    well as the reversed colormaps.
-    """
-    cmap_d = {**cmaps_listed}
-    for name, spec in datad.items():
-        cmap_d[name] = (  # Precache the cmaps at a fixed lutsize..
-            colors.LinearSegmentedColormap(name, spec, _LUTSIZE)
-            if 'red' in spec else
-            colors.ListedColormap(spec['listed'], name)
-            if 'listed' in spec else
-            colors.LinearSegmentedColormap.from_list(name, spec, _LUTSIZE))
-    # Generate reversed cmaps.
-    for cmap in list(cmap_d.values()):
-        rmap = cmap.reversed()
-        cmap._global = True
-        rmap._global = True
-        cmap_d[rmap.name] = rmap
-    return cmap_d
-
-
-class _DeprecatedCmapDictWrapper(MutableMapping):
-    """Dictionary mapping for deprecated _cmap_d access."""
-
-    def __init__(self, cmap_registry):
-        self._cmap_registry = cmap_registry
-
-    def __delitem__(self, key):
-        self._warn_deprecated()
-        self._cmap_registry.__delitem__(key)
-
-    def __getitem__(self, key):
-        self._warn_deprecated()
-        return self._cmap_registry.__getitem__(key)
-
-    def __iter__(self):
-        self._warn_deprecated()
-        return self._cmap_registry.__iter__()
-
-    def __len__(self):
-        self._warn_deprecated()
-        return self._cmap_registry.__len__()
-
-    def __setitem__(self, key, val):
-        self._warn_deprecated()
-        self._cmap_registry.__setitem__(key, val)
-
-    def get(self, key, default=None):
-        self._warn_deprecated()
-        return self._cmap_registry.get(key, default)
-
-    def _warn_deprecated(self):
-        _api.warn_deprecated(
-            "3.3",
-            message="The global colormaps dictionary is no longer "
-                    "considered public API.",
-            alternative="Please use register_cmap() and get_cmap() to "
-                        "access the contents of the dictionary."
-        )
-
-
-class ColormapRegistry(Mapping):
-
-    def __init__(self, cmaps):
-        self._cmaps = cmaps
-
-    def __getitem__(self, item):
-        try:
-            return self._cmaps[item].copy()
-        except KeyError:
-            raise KeyError(f"{item!r} is not a known colormap name")
-
-    def __iter__(self):
-        return iter(self._cmaps)
-
-    def __len__(self):
-        return len(self._cmaps)
-
-    def __str__(self):
-        return ('ColormapRegistry; available colormaps:\n' +
-                ', '.join(f"'{name}'" for name in self))
-
-    def __call__(self):
-
-        return list(self)
-
-    def register(self, cmap, *, name=None, force=False):
-
-        name = name or cmap.name
-        if name in self and not force:
-            raise ValueError(
-                f'A colormap named "{name}" is already registered.')
-        register_cmap(name, cmap.copy())
-
-
-_cmap_registry = _gen_cmap_registry()
-globals().update(_cmap_registry)
-# This is no longer considered public API
-cmap_d = _DeprecatedCmapDictWrapper(_cmap_registry)
-__builtin_cmaps = tuple(_cmap_registry)
-
-# public access to the colormaps should be via `matplotlib.colormaps`. For now,
-# we still create the registry here, but that should stay an implementation
-# detail.
-_colormaps = ColormapRegistry(_cmap_registry)
-
-
-def register_cmap(name=None, cmap=None, *, override_builtin=False):
-
-    _api.check_isinstance((str, None), name=name)
-    if name is None:
-        try:
-            name = cmap.name
-        except AttributeError as err:
-            raise ValueError("Arguments must include a name or a "
-                             "Colormap") from err
-    if name in _cmap_registry:
-        if not override_builtin and name in __builtin_cmaps:
-            msg = f"Trying to re-register the builtin cmap {name!r}."
-            raise ValueError(msg)
-        else:
-            msg = f"Trying to register the cmap {name!r} which already exists."
-            _api.warn_external(msg)
-
-    if not isinstance(cmap, colors.Colormap):
-        raise ValueError("You must pass a Colormap instance. "
-                         f"You passed {cmap} a {type(cmap)} object.")
-
-    cmap._global = True
-    _cmap_registry[name] = cmap
-    return
-
-
-def get_cmap(name=None, lut=None):
-
-    if name is None:
-        name = mpl.rcParams['image.cmap']
-    if isinstance(name, colors.Colormap):
-        return name
-    _api.check_in_list(sorted(_cmap_registry), name=name)
-    if lut is None:
-        return _cmap_registry[name]
-    else:
-        return _cmap_registry[name]._resample(lut)
-
-
-def unregister_cmap(name):
-
-    if name not in _cmap_registry:
-        return
-    if name in __builtin_cmaps:
-        raise ValueError(f"cannot unregister {name!r} which is a builtin "
-                         "colormap.")
-    return _cmap_registry.pop(name)
-
-
-class ScalarMappable:
-    """
-    A mixin class to map scalar data to RGBA.
-    The ScalarMappable applies data normalization before returning RGBA colors
-    from the given colormap.
-    """
-
-    def __init__(self, norm=None, cmap=None):
-        """
-        Parameters
-        ----------
-        norm : `matplotlib.colors.Normalize` (or subclass thereof)
-            The normalizing object which scales data, typically into the
-            interval ``[0, 1]``.
-            If *None*, *norm* defaults to a *colors.Normalize* object which
-            initializes its scaling based on the first data processed.
-        cmap : str or `~matplotlib.colors.Colormap`
-            The colormap used to map normalized data values to RGBA colors.
-        """
-        self._A = None
-        self._norm = None  # So that the setter knows we're initializing.
-        self.set_norm(norm)  # The Normalize instance of this ScalarMappable.
-        self.cmap = None  # So that the setter knows we're initializing.
-        self.set_cmap(cmap)  # The Colormap instance of this ScalarMappable.
-        #: The last colorbar associated with this ScalarMappable. May be None.
-        self.colorbar = None
-        self.callbacks = cbook.CallbackRegistry()
-
-    callbacksSM = _api.deprecated("3.5", alternative="callbacks")(
-        property(lambda self: self.callbacks))
-
-    def _scale_norm(self, norm, vmin, vmax):
-        """
-        Helper for initial scaling.
-        Used by public functions that create a ScalarMappable and support
-        parameters *vmin*, *vmax* and *norm*. This makes sure that a *norm*
-        will take precedence over *vmin*, *vmax*.
-        Note that this method does not set the norm.
-        """
-        if vmin is not None or vmax is not None:
-            self.set_clim(vmin, vmax)
-            if norm is not None:
-                raise ValueError(
-                    "Passing parameters norm and vmin/vmax simultaneously is "
-                    "not supported. Please pass vmin/vmax directly to the "
-                    "norm when creating it.")
-
-        # always resolve the autoscaling so we have concrete limits
-        # rather than deferring to draw time.
-        self.autoscale_None()
-
-    def to_rgba(self, x, alpha=None, bytes=False, norm=True):
-        """
-        Return a normalized rgba array corresponding to *x*.
-        In the normal case, *x* is a 1D or 2D sequence of scalars, and
-        the corresponding ndarray of rgba values will be returned,
-        based on the norm and colormap set for this ScalarMappable.
-        There is one special case, for handling images that are already
-        rgb or rgba, such as might have been read from an image file.
-        If *x* is an ndarray with 3 dimensions,
-        and the last dimension is either 3 or 4, then it will be
-        treated as an rgb or rgba array, and no mapping will be done.
-        The array can be uint8, or it can be floating point with
-        values in the 0-1 range; otherwise a ValueError will be raised.
-        If it is a masked array, the mask will be ignored.
-        If the last dimension is 3, the *alpha* kwarg (defaulting to 1)
-        will be used to fill in the transparency.  If the last dimension
-        is 4, the *alpha* kwarg is ignored; it does not
-        replace the pre-existing alpha.  A ValueError will be raised
-        if the third dimension is other than 3 or 4.
-        In either case, if *bytes* is *False* (default), the rgba
-        array will be floats in the 0-1 range; if it is *True*,
-        the returned rgba array will be uint8 in the 0 to 255 range.
-        If norm is False, no normalization of the input data is
-        performed, and it is assumed to be in the range (0-1).
-        """
-        # First check for special case, image input:
-        try:
-            if x.ndim == 3:
-                if x.shape[2] == 3:
-                    if alpha is None:
-                        alpha = 1
-                    if x.dtype == np.uint8:
-                        alpha = np.uint8(alpha * 255)
-                    m, n = x.shape[:2]
-                    xx = np.empty(shape=(m, n, 4), dtype=x.dtype)
-                    xx[:, :, :3] = x
-                    xx[:, :, 3] = alpha
-                elif x.shape[2] == 4:
-                    xx = x
-                else:
-                    raise ValueError("Third dimension must be 3 or 4")
-                if xx.dtype.kind == 'f':
-                    if norm and (xx.max() > 1 or xx.min() < 0):
-                        raise ValueError("Floating point image RGB values "
-                                         "must be in the 0..1 range.")
-                    if bytes:
-                        xx = (xx * 255).astype(np.uint8)
-                elif xx.dtype == np.uint8:
-                    if not bytes:
-                        xx = xx.astype(np.float32) / 255
-                else:
-                    raise ValueError("Image RGB array must be uint8 or "
-                                     "floating point; found %s" % xx.dtype)
-                return xx
-        except AttributeError:
-            # e.g., x is not an ndarray; so try mapping it
-            pass
-
-        # This is the normal case, mapping a scalar array:
-        x = ma.asarray(x)
-        if norm:
-            x = self.norm(x)
-        rgba = self.cmap(x, alpha=alpha, bytes=bytes)
-        return rgba
-
-    def set_array(self, A):
-        """
-        Set the value array from array-like *A*.
-        Parameters
-        ----------
-        A : array-like or None
-            The values that are mapped to colors.
-            The base class `.ScalarMappable` does not make any assumptions on
-            the dimensionality and shape of the value array *A*.
-        """
-        if A is None:
-            self._A = None
-            return
-
-        A = cbook.safe_masked_invalid(A, copy=True)
-        if not np.can_cast(A.dtype, float, "same_kind"):
-            raise TypeError(f"Image data of dtype {A.dtype} cannot be "
-                            "converted to float")
-
-        self._A = A
-
-    def get_array(self):
-        """
-        Return the array of values, that are mapped to colors.
-        The base class `.ScalarMappable` does not make any assumptions on
-        the dimensionality and shape of the array.
-        """
-        return self._A
-
-    def get_cmap(self):
-        """Return the `.Colormap` instance."""
-        return self.cmap
-
-    def get_clim(self):
-        """
-        Return the values (min, max) that are mapped to the colormap limits.
-        """
-        return self.norm.vmin, self.norm.vmax
-
-    def set_clim(self, vmin=None, vmax=None):
-        """
-        Set the norm limits for image scaling.
-        Parameters
-        ----------
-        vmin, vmax : float
-             The limits.
-             The limits may also be passed as a tuple (*vmin*, *vmax*) as a
-             single positional argument.
-             .. ACCEPTS: (vmin: float, vmax: float)
-        """
-        # If the norm's limits are updated self.changed() will be called
-        # through the callbacks attached to the norm
-        if vmax is None:
-            try:
-                vmin, vmax = vmin
-            except (TypeError, ValueError):
-                pass
-        if vmin is not None:
-            self.norm.vmin = colors._sanitize_extrema(vmin)
-        if vmax is not None:
-            self.norm.vmax = colors._sanitize_extrema(vmax)
-
-    def get_alpha(self):
-        """
-        Returns
-        -------
-        float
-            Always returns 1.
-        """
-        # This method is intended to be overridden by Artist sub-classes
-        return 1.
-
-    def set_cmap(self, cmap):
-        """
-        Set the colormap for luminance data.
-        Parameters
-        ----------
-        cmap : `.Colormap` or str or None
-        """
-        in_init = self.cmap is None
-        cmap = get_cmap(cmap)
-        self.cmap = cmap
-        if not in_init:
-            self.changed()  # Things are not set up properly yet.
-
-    @property
-    def norm(self):
-        return self._norm
-
-    @norm.setter
-    def norm(self, norm):
-        _api.check_isinstance((colors.Normalize, None), norm=norm)
-        if norm is None:
-            norm = colors.Normalize()
-
-        if norm is self.norm:
-            # We aren't updating anything
-            return
-
-        in_init = self.norm is None
-        # Remove the current callback and connect to the new one
-        if not in_init:
-            self.norm.callbacks.disconnect(self._id_norm)
-        self._norm = norm
-        self._id_norm = self.norm.callbacks.connect('changed',
-                                                    self.changed)
-        if not in_init:
-            self.changed()
-
-    def set_norm(self, norm):
-        """
-        Set the normalization instance.
-        Parameters
-        ----------
-        norm : `.Normalize` or None
-        Notes
-        -----
-        If there are any colorbars using the mappable for this norm, setting
-        the norm of the mappable will reset the norm, locator, and formatters
-        on the colorbar to default.
-        """
-        self.norm = norm
-
-    def autoscale(self):
-        """
-        Autoscale the scalar limits on the norm instance using the
-        current array
-        """
-        if self._A is None:
-            raise TypeError('You must first set_array for mappable')
-        # If the norm's limits are updated self.changed() will be called
-        # through the callbacks attached to the norm
-        self.norm.autoscale(self._A)
-
-    def autoscale_None(self):
-        """
-        Autoscale the scalar limits on the norm instance using the
-        current array, changing only limits that are None
-        """
-        if self._A is None:
-            raise TypeError('You must first set_array for mappable')
-        # If the norm's limits are updated self.changed() will be called
-        # through the callbacks attached to the norm
-        self.norm.autoscale_None(self._A)
-
-    def changed(self):
-        """
-        Call this whenever the mappable is changed to notify all the
-        callbackSM listeners to the 'changed' signal.
-        """
-        self.callbacks.process('changed', self)
-        self.stale = True
+import matplotlib.cm as cm
+import array
 
 @numba.jit(numba.float64[:](numba.float64[:], numba.int32, numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
 def shift1d(arr : list[numpy.float64], num: int, fill_value: list[numpy.float64]) -> list[numpy.float64] :
-    result = np.empty_like(arr)
+    result = numpy.empty_like(arr)
     if num > 0:
         result[:num] = fill_value[:num]
         result[num:] = arr[:-num]
@@ -518,7 +75,7 @@ def shift1d(arr : list[numpy.float64], num: int, fill_value: list[numpy.float64]
 
 @numba.jit(numba.float64[:,:](numba.float64[:,:], numba.int32, numba.float64[:,:]), nopython=True, parallel=True, nogil=True,cache=True)
 def shift2dy(arr: list[numpy.float64], num: int, fill_value: list[numpy.float64]) -> list[numpy.float64] :
-    result = np.empty_like(arr)
+    result = numpy.empty_like(arr)
     if num > 0:
         result[:,:num] = fill_value[:,:num]
         result[:,num:] = arr[:,:-num]
@@ -531,7 +88,7 @@ def shift2dy(arr: list[numpy.float64], num: int, fill_value: list[numpy.float64]
 
 @numba.jit(numba.float64[:,:,:](numba.float64[:,:,:], numba.int32, numba.float64[:,:,:]), nopython=True, parallel=True, nogil=True,cache=True)
 def shift3dx(arr: list[numpy.float64], num: int, fill_value: list[numpy.float64]) -> list[numpy.float64] :
-    result = np.empty_like(arr)
+    result = numpy.empty_like(arr)
     if num > 0:
         result[:num,:,:] = fill_value[:num,:,:]
         result[num:,:,:] = arr[:-num,:,:]
@@ -544,7 +101,7 @@ def shift3dx(arr: list[numpy.float64], num: int, fill_value: list[numpy.float64]
 
 @numba.jit(numba.float32[:,:,:](numba.float32[:,:,:], numba.int32, numba.float32[:,:,:]), nopython=True)
 def shift3dximg(arr: list[numpy.float32], num: int, fill_value: list[numpy.float32]) -> list[numpy.float32] :
-    result = np.empty_like(arr)
+    result = numpy.empty_like(arr)
     if num > 0:
         result[:,:num,:] = fill_value
         result[:,num:,:] = arr[:,:-num,:]
@@ -780,7 +337,7 @@ class FilterRun(Thread):
         self.enabled = run
         self.NFFT = 512
         self.noverlap=446
-        self.SM = ScalarMappable(cmap="turbo")
+        self.SM = cm.ScalarMappable(cmap="turbo")
 
     def write_filtered_data(self):
         numpy.copyto(self.buffer, self.rb.read(self.processing_size).astype(dtype=numpy.float64))
@@ -790,8 +347,8 @@ class FilterRun(Thread):
 
         #https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
         arr_color = self.SM.to_rgba(Z, bytes=False,norm=True)
-        arr_color = arr_color[:150, :, :] #we just want the last bits where the specgram data lies.
-        arr_color = snowy.resize(arr_color, width=120, height=257)  # in the future, this width will be 60.
+        arr_color = arr_color[:100, :, :] #we just want the last bits where the specgram data lies.
+        arr_color = snowy.resize(arr_color, width=60, height=257)  # in the future, this width will be 60.
         arr_color = numpy.rot90(arr_color)#rotate it and jam it in the buffer lengthwise
         self.dirtyspecbuf.growing_write(arr_color)
         #buffer receives the image translated and on the other end it's reversed and appended a few lines at a time to a texture
@@ -822,8 +379,8 @@ class FilterRun(Thread):
 
         # https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
         arr_color = self.SM.to_rgba(Z, bytes=False,norm=True)
-        arr_color = arr_color[:150, :, :]  # we just want the last bits where the specgram data lies.
-        arr_color = snowy.resize(arr_color, width=120, height=257)  # in the future, this width will be 60.
+        arr_color = arr_color[:100, :, :]  # we just want the last bits where the specgram data lies.
+        arr_color = snowy.resize(arr_color, width=60, height=257)  # in the future, this width will be 60.
         arr_color = numpy.rot90(arr_color)#rotate it and jam it in the buffer lengthwise
         self.cleanspecbuf.growing_write(arr_color)
 
@@ -1136,6 +693,18 @@ class StreamSampler(object):
     listen = stream_start  # Just set a new variable to the same method
 
 
+texture_data = []
+for i in range(0, 660 * 257):
+    texture_data.append(255 / 255)
+    texture_data.append(0)
+    texture_data.append(255 / 255)
+    texture_data.append(255 / 255)
+
+    # patch from joviex- the enumeration in the online docs showing .append doesn't work for larger textures
+
+raw_data = array.array('f', texture_data)
+raw_data2 = array.array('f', texture_data)
+    #declare globals here. These are universally accessible.
 
 if __name__ == "__main__":
     # after importing numpy, reset the CPU affinity of the parent process so
@@ -1148,6 +717,8 @@ if __name__ == "__main__":
         SS.filterthread.stop()
         SS.stop()
         quit()
+
+
 
     def fftminlog(sender, app_data):
         value = int(app_data)
@@ -1168,29 +739,21 @@ if __name__ == "__main__":
             SS.ffthigh = SS.fftlow+1
         SS.filterthread.ffthigh = SS.ffthigh
 
-
     def update_spectrogram_textures():
-        #new_color = implement buffer read
-        if len(SS.dirtyspectrogrambuffer) < 660 * 2 or len(SS.cleanspectrogrambuffer) < 660 * 2:
+        # new_color = implement buffer read
+        if len(SS.dirtyspectrogrambuffer) < 180 or len(SS.cleanspectrogrambuffer) < 180:
             return
-        dirty_data = SS.dirtyspectrogrambuffer.read(2)
-        dirty_data = numpy.rot90(dirty_data,1)#pull it out and flop it on the table
-        SS.texture1 = shift3dximg(SS.texture1,-2,dirty_data)
-        #SS.texture1 = numpy.roll(SS.texture1, -2, axis=1)#shift the contents of this array by -2
-        #SS.texture1[:,-2:,:] = dirty_data #fill the last two rows with the dirty data
-        clean_data = SS.cleanspectrogrambuffer.read(2)
-        clean_data = numpy.rot90(clean_data, 1)  # pull it out and flop it on the table
-        SS.texture2 = shift3dximg(SS.texture2, -2, clean_data)
-        #dirty_data =  cv2.flip(SS.dirtyspectrogrambuffer.read_overlap(682,4),0)#read a given amount and overlap the next read
-        #clean_data =  cv2.flip(SS.cleanspectrogrambuffer.read_overlap(682,4),0)#i dont know how much to overlap by.
-        dpg.set_value("dirty_texture", SS.texture1)                  #perhaps updating once a frame is too often?
-        dpg.set_value("clean_texture", SS.texture2)
+        SS.texture1 = shift3dximg( SS.texture1, -1, numpy.rot90(SS.dirtyspectrogrambuffer.read(1), 1))
+        SS.texture2 = shift3dximg(SS.texture2, -1, numpy.rot90(SS.cleanspectrogrambuffer.read(1), 1))
+
 
 
 
     def iter():
         dpg.set_value('iterations', f"Fabada current iterations: {SS.filterthread.iterations}")
-        update_spectrogram_textures() #update the screen contents once every 4 frames when using SS.Ticker.
+        update_spectrogram_textures() #update the screen contents once every frame
+        dpg.set_value("dirty_texture", SS.texture1)  # perhaps updating once a frame is too often?
+        dpg.set_value("clean_texture", SS.texture2)
 
     def fabadatoggle(sender, app_data,user_data):
         if SS.filterthread.enabled == True:
@@ -1219,14 +782,14 @@ if __name__ == "__main__":
     dpg.setup_dearpygui()
     dpg.configure_app(auto_device=True)
 
-    cleantexture = [1, 1, 0, 1] * 660 * 257
-    dirtytexture = [1, 0, 1, 1] * 660 * 257
-    #patch from joviex- the enumeration in the online docs showing .append doesn't work for larger textures
+
+
+
 
     with dpg.texture_registry():
-        dpg.add_dynamic_texture(660, 257, dirtytexture, tag="dirty_texture")
+        dpg.add_raw_texture(660, 257, raw_data, format=dpg.mvFormat_Float_rgba, tag="dirty_texture")
     with dpg.texture_registry():
-        dpg.add_dynamic_texture(660, 257, cleantexture, tag="clean_texture")
+        dpg.add_raw_texture(660, 257, raw_data2, format=dpg.mvFormat_Float_rgba, tag="clean_texture")
 
 
     with dpg.window(autosize=True, width = 700) as main_window:
