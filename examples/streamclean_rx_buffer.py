@@ -139,7 +139,6 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
     iterations: int = 1
     TAU: float = 2 * math.pi
     N = data.size
-    Nf = float(data.size)
 
     # must establish zeros for the model or otherwise when data is empty, algorithm will return noise
     bayesian_weight = numpy.zeros_like(data)
@@ -147,48 +146,52 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
     model_weight = numpy.zeros_like(data)
 
     # pre-declaring all arrays allows their memory to be allocated in advance
-    posterior_mean = numpy.empty_like(data)
-    posterior_variance = numpy.empty_like(data)
-    initial_evidence = numpy.empty_like(data)
-    evidence = numpy.empty_like(data)
-    prior_mean = numpy.empty_like(data)
-    prior_variance = numpy.empty_like(data)
-    original = numpy.empty_like(data)
+    posterior_mean = numpy.zeros_like(data)
+    posterior_variance = numpy.zeros_like(data)
+    initial_evidence = numpy.zeros_like(data)
+    evidence = numpy.zeros_like(data)
+    prior_mean = numpy.zeros_like(data)
+    prior_variance = numpy.zeros_like(data)
+    original = numpy.zeros_like(data)
+    boolv = numpy.zeros_like(data)
 
 
     # working set arrays, no real meaning, just to have work space
-    ja1 = numpy.empty_like(data)
-    ja2 = numpy.empty_like(data)
-    ja3 = numpy.empty_like(data)
-    ja4 = numpy.empty_like(data)
+    ja1 = numpy.zeros_like(data)
+    ja2 = numpy.zeros_like(data)
+    ja3 = numpy.zeros_like(data)
+    ja4 = numpy.zeros_like(data)
 
     # eliminate divide by zero
-    original[:] = data #get a copy of the original data
     min_d: float = numpy.nanmin(data)
     max_d: float = numpy.amax(data)
-    min1: float = 2.22044604925e-16
-    max1: float = work
+
     evidencesum: float = 0.0
     # the higher max is, the less "crackle".
     # The lower floor is, the less noise reduction is possible.
     # floor can never be less than max/2.
     # noise components are generally higher frequency.
     # the higher the floor is set, the more attenuation of both noise and signal.
+    for i in numba.prange(N):
+        if data[i] == 0.0:
+            boolv[i] = False
+        else:
+            boolv[i] = True
+
 
     for i in numba.prange(N):
-        data[i] = (data[i] - min_d) / (max_d - min_d)
-    data[data == 0.0] = 0.0000001#divide by zero is not cool bro!
+        if boolv[i]:
+            data[i] = (data[i] - min_d) / (max_d - min_d)
 
-    data_est = data[original != 0.0]
-
+    data_est = data[boolv == True]
     data_mean = numpy.mean(data_est)  # get the mean, but only for the data that's not windowed
     true_count = data_est.size
     data_variance = numpy.zeros_like(data)
     for i in numba.prange(N):
-        if original[i] != 0.0:
-            data_variance[i] = 5 + (numpy.abs(data_mean - data[i]) ** 2) #normalize BEFORE variance
+        if boolv[i]:
+            data_variance[i] = true_count + (numpy.abs(data_mean - data[i]) ** 2) #normalize BEFORE variance
         else:
-            data_variance[i] = data_mean  ##don't record variance from the artificial mean outside the passband
+            data_variance[i] = 0.0  ##don't record variance from the artificial mean outside the passband
 
 
     posterior_mean[:] = data[:]
@@ -196,24 +199,25 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
     posterior_variance[:] = data_variance[:]
 
     for i in numba.prange(N):
-        if original[i] != 0.0:
+        if boolv[i]:
             ja1[i] = ((0.0 - math.sqrt(data[i])) ** 2)
             ja2[i] = ((0.0 + data_variance[i]) * 2)
             ja3[i] = math.sqrt(TAU * (0.0 + data_variance[i]))
     for i in numba.prange(N):
-        if original[i] != 0.0:
+        if boolv[i]:
             ja4[i] = math.exp(-ja1[i] / ja2[i])
     for i in numba.prange(N):
-        evidence[i] = ja4[i] / ja3[i]
+        if boolv[i]:
+            evidence[i] = ja4[i] / ja3[i]
     evidence_previous: float = numpy.mean(evidence)
     initial_evidence[:] = evidence[:]
 
     chi2_data_min: float = 0.0
     for i in numba.prange(N):
-        if original[i] != 0.0:
+        if boolv[i]:
             ja1[i] = data[i] - posterior_mean[i]
     for i in numba.prange(N):
-        if original[i] != 0.0:
+        if boolv[i]:
             chi2_data_min += ja1[i] ** 2.0 / data_variance[i]
     chi2_pdf_previous: float = 0.0
     chi2_pdf_derivative_previous: float = 0.0
@@ -225,7 +229,7 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
     while 1:
 
         # GENERATES PRIORS
-        prior_mean[:] = posterior_mean[:]
+        prior_mean[:]  = posterior_mean[:]
 
         for i in numba.prange(N - 1):
             prior_mean[i] = prior_mean[i] + posterior_mean[i + 1]
@@ -235,7 +239,12 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
         prior_mean[-1] = prior_mean[-1] + (posterior_mean[-2] + posterior_mean[-3]) / 2.
 
         for i in numba.prange(N):
-            if original[i] != 0.0:
+            if not boolv[i]:
+                prior_mean[i] = 0.0
+
+
+        for i in numba.prange(N):
+            if boolv[i]:
                 prior_mean[i] = prior_mean[i] / 3.
 
 
@@ -244,39 +253,39 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
         # APPLY BAYES' THEOREM ((b\a)a)\b?
 
         for i in numba.prange(N):
-            if original[i] != 0.0:
+            if boolv[i]:
                 posterior_variance[i] = 1. / (1. / data_variance[i] + 1. / prior_variance[i])
         for i in numba.prange(N):
-            if original[i] != 0.0:
+            if boolv[i]:
                 posterior_mean[i] = (
                             ((prior_mean[i] / prior_variance[i]) + (data[i] / data_variance[i])) * posterior_variance[i])
 
         # EVALUATE EVIDENCE
 
         for i in numba.prange(N):
-            if original[i] != 0.0:
+            if boolv[i]:
                 ja1[i] = ((prior_mean[i] - math.sqrt(data[i])) ** 2)
                 ja2[i] = ((prior_variance[i] + data_variance[i]) * 2.)
                 ja3[i] = math.sqrt(TAU * (prior_variance[i] + data_variance[i]))
         for i in numba.prange(N):
-            if original[i] != 0.0:
+            if boolv[i]:
                 ja4[i] = math.exp(-ja1[i] / ja2[i])
         for i in numba.prange(N):
-            if original[i] != 0.0:
+            if boolv[i]:
                 evidence[i] = ja4[i] / ja3[i]
 
         # (math.fsum(evidence) / N) Same thing as numpy.mean but slightly more accurate. Replaces both the mean and the sum calls with JIT'd code..
         # may or may not be faster/slower but reduces dependency on external library
         for i in numba.prange(N):
-            if original[i] != 0.0:
+            if boolv[i]:
                 evidencesum += evidence[i]
         evidence_derivative: float = (evidencesum/ true_count) - evidence_previous
         # EVALUATE CHI2
         chi2_data: float = 0.0
 
         for i in numba.prange(N):
-            if original[i] != 0.0:
-                chi2_data += math.sqrt((data[i] - posterior_mean[i]) ** 2) / data_variance[i]
+            if boolv[i]:
+                chi2_data += math.sqrt((data[i] - posterior_mean[i]) ** 2) / data_variance[i] #TODO
 
         #chi2 = square root of (actual  - expected )^2  / expected
         #def chi2(x, y, u, q, r, s):
@@ -286,18 +295,18 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
 
         # COMBINE MODELS FOR THE ESTIMATION
         for i in numba.prange(N):
-            if original[i] != 0.0:
+            if boolv[i]:
                 model_weight[i] = evidence[i] * chi2_data
 
         for i in numba.prange(N):
-            if original[i] != 0.0:
+            if boolv[i]:
                 bayesian_weight[i] = bayesian_weight[i] + model_weight[i]
                 bayesian_model[i] = bayesian_model[i] + (model_weight[i] * posterior_mean[i])
 
         # for any data set which is non-trivial. Remember, DF/2 - 1 becomes the exponent! For anything over a few hundred this quickly exceeds float64.
         # chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
         gamman: numpy.float64 = (chi2_data / 2.)
-        gammas: numpy.float64 = ((gamman) ** z) # TODO
+        gammas: numpy.float64 = ((gamman) * z) # TODO
         gammaq: numpy.float64 = math.exp(-chi2_data / 2.)
         # for particularily large values, math.exp just returns 0.0
         # TODO
@@ -325,23 +334,20 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
 
         # COMBINE ITERATION ZERO
     for i in numba.prange(N):
-        if original[i] != 0.0:
+        if boolv[i]:
             model_weight[i] = initial_evidence[i] * chi2_data_min
     for i in numba.prange(N):
-        if original[i] != 0.0:
+        if boolv[i]:
             bayesian_weight[i] = (bayesian_weight[i] + model_weight[i])
             bayesian_model[i] = bayesian_model[i] + (model_weight[i] * data[i])
 
     for i in numba.prange(N):
-        if original[i] != 0.0:
+        if boolv[i]:
             data[i] = bayesian_model[i] / bayesian_weight[i]
 
     for i in numba.prange(N):
-        if original[i] == 0.0:
-            data[i] = 0.0  # undo correction
-    for i in numba.prange(N):
-        data[i] = (data[i] * (max_d - min_d) + min_d)
-
+        if boolv[i]:
+            data[i] = (data[i] * (max_d - min_d) + min_d) #denormalize the data
     return iterations, data
 
 class FilterRun(Thread):
