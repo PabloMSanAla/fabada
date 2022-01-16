@@ -822,7 +822,7 @@ if __name__ == "__main__":
 #the height will tell us how high to make our texture. The width won't tell us how wide to make it-
 #but it will tell us how large the buffer needs to be.
     dpg.create_context()
-    dpg.create_viewport(title='FABADA Streamclean', height=150, width=500)
+    dpg.create_viewport(title='FABADA Streamclean', height=200, width=500)
     dpg.setup_dearpygui()
     dpg.configure_app(auto_device=True)
 
@@ -833,7 +833,7 @@ if __name__ == "__main__":
         dpg.add_raw_texture(500, 100, raw_data2, format=dpg.mvFormat_Float_rgba, tag="clean_texture")
 
 
-    with dpg.window(height = 150, width = 500) as main_window:
+    with dpg.window(height = 200, width = 500) as main_window:
         dpg.add_text("Welcome to FABADA! 1S delay typical")
         dpg.add_text(f"Your speaker device is: ({SS.speakerdevice})")
         dpg.add_text(f"Your microphone device is:({SS.micdevice})")
