@@ -338,9 +338,9 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
         timerun = (current - start) * 1000
         iterations += 1
         if (
-                (chi2_data > true_count and chi2_pdf_snd_derivative >= 0)
+                ((chi2_data > true_count and chi2_pdf_snd_derivative >= 0)
                 and (evidence_derivative < 0)
-                and (iterations > 100)
+                and (iterations > 100))
                 or (int(timerun) > int(timex))  # use no more than the time allocated per cycle
                 or (iterations > 400)#don't overfit the data
         ):
