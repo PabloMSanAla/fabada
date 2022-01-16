@@ -24,7 +24,7 @@ https://github.com/conda-forge/miniforge/#download
 
  conda create --name fabada --no-default-packages python=3.10
  conda activate fabada
- pip install pipwin, dearpygui, numba, np_rw_buffer,matplotlib, snowy
+ pip install pipwin, dearpygui, numba, np_rw_buffer,matplotlib, snowy,maad
  pipwin install pyaudio
 
 
@@ -59,6 +59,7 @@ import dearpygui.dearpygui as dpg
 import snowy
 import matplotlib.cm as cm
 import array
+
 
 @numba.jit(numba.float64[:](numba.float64[:], numba.int32, numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
 def shift1d(arr : list[numpy.float64], num: int, fill_value: list[numpy.float64]) -> list[numpy.float64] :
@@ -99,7 +100,7 @@ def shift3dx(arr: list[numpy.float64], num: int, fill_value: list[numpy.float64]
         result[:] = arr
     return result
 
-@numba.jit(numba.float32[:,:,:](numba.float32[:,:,:], numba.int32, numba.float32[:,:,:]), nopython=True)
+@numba.jit(numba.float32[:,:,:](numba.float32[:,:,:], numba.int32, numba.float32[:,:,:]), nopython=True, parallel=True, nogil=True,cache=True)
 def shift3dximg(arr: list[numpy.float32], num: int, fill_value: list[numpy.float32]) -> list[numpy.float32] :
     result = numpy.empty_like(arr)
     if num > 0:
@@ -112,6 +113,19 @@ def shift3dximg(arr: list[numpy.float32], num: int, fill_value: list[numpy.float
         result[:] = arr
     return result
 
+@numba.jit(numba.float64[:](numba.float64[:], numba.int32), nopython=True, parallel=True, nogil=True,cache=True)
+def round(data: list[float], num: int) -> list[float] :
+    X = num
+    for i in numba.prange(X):
+        data[i] = data[i] * (i / X)  # perform a linear fadein
+    return data
+
+@numba.jit(numba.float64[:](numba.float64[:], numba.int32), nopython=True, parallel=True, nogil=True,cache=True)
+def unround(data: list[float], num: int) -> list[float] :
+    X = num
+    for i in numba.prange(X):
+        data[i] = data[i] * ((1 + X - i) / X)#perform a linear fadeout
+    return data
 #because numpy's zeroth array is the Y axis, we have to do this in the 1st dimension to shift the X axis
 #if the arrays are not the same size, don't attempt to use coordinates for fill value- it will fail.
 
@@ -152,7 +166,6 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
     evidence = numpy.zeros_like(data)
     prior_mean = numpy.zeros_like(data)
     prior_variance = numpy.zeros_like(data)
-    original = numpy.zeros_like(data)
     boolv = numpy.zeros_like(data)
 
 
@@ -189,7 +202,7 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
     data_variance = numpy.zeros_like(data)
     for i in numba.prange(N):
         if boolv[i]:
-            data_variance[i] = true_count + (numpy.abs(data_mean - data[i]) ** 2) #normalize BEFORE variance
+            data_variance[i] = (numpy.abs(data_mean - data[i]) + true_count ** 2) #normalize BEFORE variance
         else:
             data_variance[i] = 0.0  ##don't record variance from the artificial mean outside the passband
 
@@ -285,7 +298,8 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
 
         for i in numba.prange(N):
             if boolv[i]:
-                chi2_data += math.sqrt((data[i] - posterior_mean[i]) ** 2) / data_variance[i] #TODO
+                chi2_data += math.sqrt((data[i] - posterior_mean[i]) ** 2) / (data_variance[i] * 512)
+                #seems to work better for audio to reduce the chi2 data considerably
 
         #chi2 = square root of (actual  - expected )^2  / expected
         #def chi2(x, y, u, q, r, s):
@@ -306,7 +320,7 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
         # for any data set which is non-trivial. Remember, DF/2 - 1 becomes the exponent! For anything over a few hundred this quickly exceeds float64.
         # chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
         gamman: numpy.float64 = (chi2_data / 2.)
-        gammas: numpy.float64 = ((gamman) * z) # TODO
+        gammas: numpy.float64 = ((gamman) ** z) # TODO
         gammaq: numpy.float64 = math.exp(-chi2_data / 2.)
         # for particularily large values, math.exp just returns 0.0
         # TODO
@@ -322,15 +336,17 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
         with numba.objmode(current=numba.float64):
            current = time.time()
         timerun = (current - start) * 1000
-
+        iterations += 1
         if (
-                (chi2_data > data.size and chi2_pdf_snd_derivative >= 0)
+                (chi2_data > true_count and chi2_pdf_snd_derivative >= 0)
                 and (evidence_derivative < 0)
+                and (iterations > 100)
                 or (int(timerun) > int(timex))  # use no more than the time allocated per cycle
+                or (iterations > 400)#don't overfit the data
         ):
             break
 
-        iterations += 1
+
 
         # COMBINE ITERATION ZERO
     for i in numba.prange(N):
@@ -348,10 +364,13 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
     for i in numba.prange(N):
         if boolv[i]:
             data[i] = (data[i] * (max_d - min_d) + min_d) #denormalize the data
+
+
+
     return iterations, data
 
 class FilterRun(Thread):
-    def __init__(self, rb, pb, channels, processing_size, dtype,fftlow,ffthigh,work,time,floor,iterations,dirty,clean,run):
+    def __init__(self, rb, pb, channels, processing_size, dtype,work,time,floor,iterations,clean,run):
         super(FilterRun, self).__init__()
         self.running = True
         self.rb = rb
@@ -363,61 +382,82 @@ class FilterRun(Thread):
         self.buffer2 = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size * self.channels)])
         self.buffer2 = self.buffer.reshape(-1, self.channels)
         self.buffer = self.buffer.reshape(-1, self.channels)
-        self.fftlow = fftlow
-        self.ffthigh = ffthigh
         self.work = work
         self.time = time
         self.floor = floor
         self.iterations = iterations
-        self.dirtyspecbuf = dirty
         self.cleanspecbuf = clean
         self.enabled = run
         self.NFFT = 512
         self.noverlap=446
         self.SM = cm.ScalarMappable(cmap="turbo")
 
+
+
+
     def write_filtered_data(self):
         numpy.copyto(self.buffer, self.rb.read(self.processing_size).astype(dtype=numpy.float64))
         #self.buffer contains (44100,2) of numpy.float32 audio values sampled with pyaudio
-        Z, freqs, t = mlab.specgram(self.buffer[:, 0], NFFT=self.NFFT, Fs=44100, detrend=None, window=None, noverlap=self.noverlap,
-                                    pad_to=None, sides=None, scale_by_freq=None, mode="magnitude")
-
-        #https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
-        arr_color = self.SM.to_rgba(Z, bytes=False,norm=True)
-        arr_color = arr_color[:100, :, :] #we just want the last bits where the specgram data lies.
-        arr_color = snowy.resize(arr_color, width=60, height=257)  # in the future, this width will be 60.
-        arr_color = numpy.rot90(arr_color)#rotate it and jam it in the buffer lengthwise
-        self.dirtyspecbuf.growing_write(arr_color)
-        #buffer receives the image translated and on the other end it's reversed and appended a few lines at a time to a texture
-
-
-
-        #callbackmain(self.buffer[:, 0],0)
         iterationz = 0
         if self.enabled == False:
             self.processedrb.write(self.buffer.astype(dtype=self.dtype), error=True)
+            Z, freqs, t = mlab.specgram(self.buffer2[:, 0], NFFT=256, Fs=44100, detrend=None, window=None, noverlap=223,
+                                        pad_to=None, scale_by_freq=None, mode="magnitude")
+
+            # https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
+            arr_color = self.SM.to_rgba(Z, bytes=False, norm=True)
+            arr_color = arr_color[:50, :, :]  # we just want the last bits where the specgram data lies.
+            arr_color = snowy.resize(arr_color, width=60, height=100)  # in the future, this width will be 60.
+            arr_color = numpy.rot90(arr_color)  # rotate it and jam it in the buffer lengthwise
             self.cleanspecbuf.growing_write(arr_color)
             return
+
         for i in range(self.channels):
             fft = numpy.fft.rfft(self.buffer[:, i])
             zeros = numpy.zeros_like(fft)
             band = numpy.zeros_like(fft)
-            band[self.fftlow:self.ffthigh] = fft[self.fftlow:self.ffthigh]
-            iteration, band = numba_fabada(numpy.fft.irfft(band), 360.0, self.work, self.floor)
+            band2 = numpy.zeros_like(fft)
+
+            band[21:1000] = fft[21:1000]
+            band2[1000:7600] = fft[1000:7600]
+
+            iteration, band = numba_fabada(numpy.fft.irfft(band), 180.0, self.work, self.floor)
+            iteration2, band2 = numba_fabada(numpy.fft.irfft(band2), 180.0, self.work, self.floor)
+            #use multiple FFT to give fabada a little bit better chance to estimate correctly
+            band2 = numpy.fft.rfft(band2)
             band = numpy.fft.rfft(band)
-            zeros[self.fftlow:self.ffthigh] = band[self.fftlow:self.ffthigh]
+            zeros[21:1000] = band[21:1000]
+            zeros[1000:7600] = band2[1000:7600]
+
             self.buffer2[:, i] = numpy.fft.irfft(zeros)
+            iterationz = iterationz + iteration
+
+            self.buffer2[:, i] = round(self.buffer2[:, i],512)
+            self.buffer2[43588:44100, i] = unround(self.buffer2[43588:44100, i],512)
+
+            # the click happens because the per-frame is not preserved, ie, fabada is not continually processing data.
+            # as a result, each frame varies from the next- and it does so enough for there to be a perceptible click.
+            # until fabada can process incoming data continually, it will click and require zero crossing.
+            #furthermore, while smaller sample frames will work with this method, if there isn't enough to clean,
+            #the method won't catch the leading edge and thus the zero transition wont happen/it will be audible.
+            #with larger sample sizes, it's essentially inaudible- but the lower the sample rate, the larger timeframe
+            #a given window corresponds to. IE at 22050 a 440 window is a 220 window at 44100.
+            #44100 is therefore the smallest we can work with to give good results.
+            # (numpy.abs(i - (X + 1)) / X)  brings the value down gradually
+            #we now artificially contrive the zero crossing as a zero valued value at zero.
+            self.buffer2[0, i] = 0
+
             iterationz = iterationz + iteration
         self.iterations = iterationz
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
 
-        Z, freqs, t = mlab.specgram(self.buffer2[:, 0], NFFT=512, Fs=44100.0, detrend=None, window=None, noverlap=446,
+        Z, freqs, t = mlab.specgram(self.buffer2[:, 0], NFFT=256, Fs=44100, detrend=None, window=None, noverlap=223,
                                     pad_to=None, scale_by_freq=None, mode="magnitude")
 
         # https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
         arr_color = self.SM.to_rgba(Z, bytes=False,norm=True)
-        arr_color = arr_color[:100, :, :]  # we just want the last bits where the specgram data lies.
-        arr_color = snowy.resize(arr_color, width=60, height=257)  # in the future, this width will be 60.
+        arr_color = arr_color[:50, :, :]  # we just want the last bits where the specgram data lies.
+        arr_color = snowy.resize(arr_color, width=60, height=100)  # in the future, this width will be 60.
         arr_color = numpy.rot90(arr_color)#rotate it and jam it in the buffer lengthwise
         self.cleanspecbuf.growing_write(arr_color)
 
@@ -479,28 +519,17 @@ class StreamSampler(object):
                                               buffer_delay=0,
                                               # as long as fabada completes in O(n) of less than the sample size in time
                                               dtype=numpy.dtype(dtype))
-        self.cleanspectrogrambuffer = RingBuffer((660, 257, 4),dtype=numpy.float32)
-        self.dirtyspectrogrambuffer = RingBuffer((660, 257, 4),dtype=numpy.float32)
+        self.cleanspectrogrambuffer = RingBuffer((660, 100, 4),dtype=numpy.float32)
         self.cleanspectrogrambuffer.maxsize = int(9900)
-        self.dirtyspectrogrambuffer.maxsize = int(9900)
-        self.texture1 = [1., 1., 1., 1.] * 660 * 257
-        self.texture1 = numpy.asarray( self.texture1,dtype=numpy.float32)
-        self.texture2 = [1., 1., 1., 1.] * 660 * 257
+        self.texture2 = [1., 1., 1., 1.] * 500 * 100
         self.texture2 = numpy.asarray( self.texture2,dtype=numpy.float32)
-        self.texture1 = self.texture1.reshape((257, 660, 4))
-        self.texture2 = self.texture2.reshape((257, 660, 4)) #create and shape the textures. Backwards.
-
-
-
-
-        self.fftlow = 20
-        self.ffthigh = 11025
+        self.texture2 = self.texture2.reshape((100, 500, 4)) #create and shape the textures. Backwards.
         self.work = 1. #included only for completeness
         self.time = 495 #generally, set this to whatever timeframe you want it done in. 44100 samples = 500ms window.
         self.floor = 8192#unknown, seems to do better with higher values
         self.iterations = 0
         self.enabled = True
-        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.fftlow,self.ffthigh,self.work,self.time, self.floor,self.iterations,self.dirtyspectrogrambuffer,self.cleanspectrogrambuffer,self.enabled)
+        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.work,self.time, self.floor,self.iterations,self.cleanspectrogrambuffer,self.enabled)
         self.micindex = micindex
         self.speakerindex = speakerindex
         self.micstream = None
@@ -731,7 +760,7 @@ class StreamSampler(object):
 
 
 texture_data = []
-for i in range(0, 660 * 257):
+for i in range(0, 500 * 100):
     texture_data.append(255 / 255)
     texture_data.append(0)
     texture_data.append(255 / 255)
@@ -739,7 +768,6 @@ for i in range(0, 660 * 257):
 
     # patch from joviex- the enumeration in the online docs showing .append doesn't work for larger textures
 
-raw_data = array.array('f', texture_data)
 raw_data2 = array.array('f', texture_data)
     #declare globals here. These are universally accessible.
 
@@ -757,30 +785,10 @@ if __name__ == "__main__":
 
 
 
-    def fftminlog(sender, app_data):
-        value = int(app_data)
-        if value < SS.ffthigh:
-            SS.fftlow = value
-        else:
-            dpg.set_value('FFTmin',SS.ffthigh-1)
-            SS.fftlow = SS.ffthigh-1
-        SS.filterthread.fftlow = SS.fftlow
-
-
-    def fftmaxlog(sender, app_data):
-        value = int(app_data)
-        if value > SS.fftlow:
-            SS.ffthigh = value
-        else:
-            dpg.set_value('FFTMax',SS.fftlow+1)
-            SS.ffthigh = SS.fftlow+1
-        SS.filterthread.ffthigh = SS.ffthigh
-
     def update_spectrogram_textures():
         # new_color = implement buffer read
-        if len(SS.dirtyspectrogrambuffer) < 180 or len(SS.cleanspectrogrambuffer) < 180:
+        if len(SS.cleanspectrogrambuffer) < 60:
             return
-        SS.texture1 = shift3dximg( SS.texture1, -1, numpy.rot90(SS.dirtyspectrogrambuffer.read(1), 1))
         SS.texture2 = shift3dximg(SS.texture2, -1, numpy.rot90(SS.cleanspectrogrambuffer.read(1), 1))
 
 
@@ -789,7 +797,6 @@ if __name__ == "__main__":
     def iter():
         dpg.set_value('iterations', f"Fabada current iterations: {SS.filterthread.iterations}")
         update_spectrogram_textures() #update the screen contents once every frame
-        dpg.set_value("dirty_texture", SS.texture1)  # perhaps updating once a frame is too often?
         dpg.set_value("clean_texture", SS.texture2)
 
     def fabadatoggle(sender, app_data,user_data):
@@ -815,34 +822,23 @@ if __name__ == "__main__":
 #the height will tell us how high to make our texture. The width won't tell us how wide to make it-
 #but it will tell us how large the buffer needs to be.
     dpg.create_context()
-    dpg.create_viewport(title='FABADA Streamclean', height=700, width=700)
+    dpg.create_viewport(title='FABADA Streamclean', height=150, width=500)
     dpg.setup_dearpygui()
     dpg.configure_app(auto_device=True)
 
 
 
 
-
     with dpg.texture_registry():
-        dpg.add_raw_texture(660, 257, raw_data, format=dpg.mvFormat_Float_rgba, tag="dirty_texture")
-    with dpg.texture_registry():
-        dpg.add_raw_texture(660, 257, raw_data2, format=dpg.mvFormat_Float_rgba, tag="clean_texture")
+        dpg.add_raw_texture(500, 100, raw_data2, format=dpg.mvFormat_Float_rgba, tag="clean_texture")
 
 
-    with dpg.window(autosize=True, width = 700) as main_window:
-        dpg.add_text("Welcome to FABADA! Feel free to experiment.")
+    with dpg.window(height = 150, width = 500) as main_window:
+        dpg.add_text("Welcome to FABADA! 1S delay typical")
         dpg.add_text(f"Your speaker device is: ({SS.speakerdevice})")
         dpg.add_text(f"Your microphone device is:({SS.micdevice})")
         dpg.add_text("Fabada current iterations: 0",tag="iterations")
         dpg.add_button(label="Disable", tag="toggleswitch", callback=fabadatoggle)
-        dpg.add_slider_int(label="FFTmin", tag="FFTmin", default_value=SS.fftlow, min_value=1,
-                           max_value=11025,
-                           callback=fftminlog)
-        dpg.add_slider_int(label="FFTMax", tag="FFTMax", default_value=SS.ffthigh, min_value=1,
-                           max_value=11025,
-                           callback=fftmaxlog)
-
-        dpg.add_image("dirty_texture")
         dpg.add_image("clean_texture")
 
     dpg.set_primary_window(main_window,True)  # TODO: Added Primary window, so the dpg window fills the whole Viewport
