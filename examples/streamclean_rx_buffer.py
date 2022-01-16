@@ -202,7 +202,7 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
     data_variance = numpy.zeros_like(data)
     for i in numba.prange(N):
         if boolv[i]:
-            data_variance[i] = (numpy.abs(data_mean - data[i]) + true_count ** 2) #normalize BEFORE variance
+            data_variance[i] =  true_count +((numpy.abs(data_mean - data[i]) + true_count) ** 2) #normalize BEFORE variance
         else:
             data_variance[i] = 0.0  ##don't record variance from the artificial mean outside the passband
 
@@ -210,7 +210,7 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
     posterior_mean[:] = data[:]
     prior_mean[:] = data[:]
     posterior_variance[:] = data_variance[:]
-
+    #fabada figure 14
     for i in numba.prange(N):
         if boolv[i]:
             ja1[i] = ((0.0 - math.sqrt(data[i])) ** 2)
@@ -263,26 +263,31 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
 
         prior_variance[:] = posterior_variance[:]
 
-        # APPLY BAYES' THEOREM ((b\a)a)\b?
-
+        # APPLY BAYES' THEOREM 
+        #fabada figure 8?
         for i in numba.prange(N):
             if boolv[i]:
                 posterior_variance[i] = 1. / (1. / data_variance[i] + 1. / prior_variance[i])
+
+
+	#fabada figure 7
         for i in numba.prange(N):
             if boolv[i]:
                 posterior_mean[i] = (
                             ((prior_mean[i] / prior_variance[i]) + (data[i] / data_variance[i])) * posterior_variance[i])
 
-        # EVALUATE EVIDENCE
 
+
+        # EVALUATE EVIDENCE
+        #fabada figure 6: probability distribution calculation	
         for i in numba.prange(N):
             if boolv[i]:
-                ja1[i] = ((prior_mean[i] - math.sqrt(data[i])) ** 2)
-                ja2[i] = ((prior_variance[i] + data_variance[i]) * 2.)
+                ja1[i] = ((prior_mean[i] - math.sqrt(data[i])) ** 2) 
+                ja2[i] = (2. * (prior_variance[i] + data_variance[i]))
                 ja3[i] = math.sqrt(TAU * (prior_variance[i] + data_variance[i]))
         for i in numba.prange(N):
             if boolv[i]:
-                ja4[i] = math.exp(-ja1[i] / ja2[i])
+                ja4[i] = math.exp(-(ja1[i] / ja2[i]))
         for i in numba.prange(N):
             if boolv[i]:
                 evidence[i] = ja4[i] / ja3[i]
@@ -295,10 +300,10 @@ def numba_fabada(data: list[numpy.float64], timex: float, work: float,floor: flo
         evidence_derivative: float = (evidencesum/ true_count) - evidence_previous
         # EVALUATE CHI2
         chi2_data: float = 0.0
-
+        #fabada figure 11
         for i in numba.prange(N):
             if boolv[i]:
-                chi2_data += math.sqrt((data[i] - posterior_mean[i]) ** 2) / (data_variance[i] * 512)
+                chi2_data += math.sqrt((data[i] - posterior_mean[i]) ** 2) / (data_variance[i])
                 #seems to work better for audio to reduce the chi2 data considerably
 
         #chi2 = square root of (actual  - expected )^2  / expected
