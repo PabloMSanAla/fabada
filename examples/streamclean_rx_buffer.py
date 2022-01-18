@@ -26,7 +26,7 @@ https://github.com/conda-forge/miniforge/#download
  conda activate fabada
  pip install pipwin, dearpygui, numba, np_rw_buffer
  pipwin install pyaudio
- 
+
  #on linux and mac osx ,make changes to the audio device detection and download pyaudio using your own repository.
 
 
@@ -307,7 +307,6 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
                 posterior_mean[i] = (
                             ((prior_mean[i] / prior_variance[i]) + (data[i] / data_variance[i])) * posterior_variance[i])
 
-        evidence_previous = numpy.mean(evidence)
         # EVALUATE EVIDENCE
         #fabada figure 6: probability distribution calculation	
         for i in numba.prange(N):
@@ -318,10 +317,6 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
                 ja4[i] = math.exp((-ja1[i] / ja2[i]))
         for i in numba.prange(N):
                 evidence[i] = ja4[i] / ja3[i]
-
-        evidence_derivative: float =  numpy.mean(evidence[boolv == True]) - evidence_previous
-        #in the real world, values are never zero. avoid adding questionables into the evidence
-
 
         # EVALUATE CHI2
         #fabada figure 11
@@ -340,13 +335,6 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
                 bayesian_weight[i] = bayesian_weight[i] + model_weight[i]
                 bayesian_model[i] = bayesian_model[i] + (model_weight[i] * posterior_mean[i])
 
-        # for any data set which is non-trivial. Remember, DF/2 - 1 becomes the exponent! For anything over a few hundred this quickly exceeds float64.
-
-        if (chi2_data >  data.size) and (evidence_derivative < data_mean):
-            if iterations > iterationcontrol - 10:
-                break# # break if you've succeeded in fitting the data
-                #don't break substantially early.
-
         if iterations >= iterationcontrol :
             break #break wherever the user wants it broken.
 
@@ -356,8 +344,6 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
         if (int(timerun) > int(timex)):
             break#  avoid exceeding our time budget, regardless
-
-
 
         # COMBINE ITERATION ZERO
     for i in numba.prange(N):
@@ -758,17 +744,14 @@ if __name__ == "__main__":
         SS.filterthread.iterationcontrol = int(app_data)
 
     dpg.create_context()
-    dpg.create_viewport(title='FABADA Streamclean', height=200, width=500)
+    dpg.create_viewport(title='FABADA Streamclean', height=100, width=400)
     dpg.setup_dearpygui()
     dpg.configure_app(auto_device=True)
 
-    with dpg.window(height = 200, width = 500) as main_window:
+    with dpg.window(height = 100, width = 400) as main_window:
         dpg.add_text("Welcome to FABADA! 1S delay typical.")
         dpg.add_text("Adjust the slider to your preference.")
-
-        dpg.add_text(f"Your speaker device is: ({SS.speakerdevice})")
-        dpg.add_text(f"Your microphone device is:({SS.micdevice})")
-        dpg.add_slider_int(label="Amount of noise reduction", tag="iterations",max_value = 1024, min_value = 1, default_value =64, callback=iterationset)
+        dpg.add_slider_int(tag="iterations",max_value = 255, min_value = 1, default_value =64, callback=iterationset)
         dpg.add_button(label="Disable", tag="toggleswitch", callback=fabadatoggle)
 
     dpg.set_primary_window(main_window,True)  # TODO: Added Primary window, so the dpg window fills the whole Viewport
