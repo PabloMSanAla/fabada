@@ -24,7 +24,7 @@ https://github.com/conda-forge/miniforge/#download
 
  conda create --name fabada --no-default-packages python=3.10
  conda activate fabada
- pip install pipwin, dearpygui, numba, np-rw-buffer
+ pip install pipwin, dearpygui, numba, np_rw_buffer
  pipwin install pyaudio
 
  #on linux and mac osx ,make changes to the audio device detection and download pyaudio using your own repository.
@@ -420,9 +420,10 @@ class FilterRun(Thread):
                      #zero crossing detected!
                         self.buffer2[44086 + b, i] = 0.0 #insert zero crossing fix
 
-            self.last[i] = self.buffer2[-1, i] #copy out last value of previous array
-            self.buffer2[:, i] = round(self.buffer2[:, i],440)#
-            self.buffer2[43700:44100, i] = unround(self.buffer2[43700:44100, i],400)
+            self.last[i] = self.buffer2[-1, i] #copy out last sign of previous array
+            self.buffer2[:, i] = round(self.buffer2[:, i],200)#
+            self.buffer2[43900:44100, i] = unround(self.buffer2[43900:44100, i],200)
+            #the rounding is necessary to prevent clicking
 
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
 
