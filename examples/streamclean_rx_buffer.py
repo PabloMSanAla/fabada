@@ -159,21 +159,26 @@ def savgol(data: list[numpy.float64]):
         x[i - 2,4] =  data_pad[i + 2]
         x[i - 2,5]=  data_pad[i + 3]
 
-    z = numpy.zeros((44100, 10))  # create array for outputs
+   
+    #
+    #multiply vec2 by vec1[0] = 2    4   6
+    #multiply vec2 by vec1[1] = -    3   6   9
+    #multiply vec2 by vec1[2] = -    -   4   8   12
+    #-----------------------------------------------
+    #add the above three      = 2    7   16  17  12 
+
+    z = numpy.zeros((44100, 30))
 
     for i in numba.prange(44100):
-        for n in numba.prange(10):
-            for k in numba.prange(len(x[0, :])):
-                if n - k >= 0 and len(coeff) > n - k:  # There is no overlap
-                    z[i,k]= x[0, :][k] * coeff[n - k]  # Convolution's definition
-    #numba accelerated simple 1d convolution.
-
+        for n in numba.prange(30):
+            for k in numba.prange(5):
+                for gk in numba.prange(6):
+                    z[i,n] = coeff[gk] * x[i, k]
+    
 
         #create the array of each set of averaging values
-   # for i in numba.prange(44100):
-     #   z[i,:] = numpy.correlate(x[i, :],coeff)
     for i in numba.prange(44100):
-        new_data[i] = numpy.sum(z[i])
+        new_data[i] = numpy.sum(z[i,:])
     return new_data
 
 def chi2pdffullprecision(chi2_data):
