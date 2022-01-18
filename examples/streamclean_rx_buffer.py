@@ -143,11 +143,11 @@ def savgol(data: list[numpy.float64]):
     data_pad = numpy.zeros(44104)
     data_pad[2:44102] = data[0:44100]#leaving one on each side
     firstval =  2* data[0] - data[2:0:-1]
-    lastvals = 2* data[-1] - data[-2:-4:-1]
-    data_pad[0:1] = firstval
-    data_pad[-2:-1] = lastvals # perform signal smoothing to reduce spurius data at edge
-    data_pad[44101] = data[44100] #performs the constant padding of two without numpy.pad
-    data_pad[44102] = data[44100]
+    lastvals = 2* data[-1] - data[-1:-3:-1]
+    data_pad[0] = firstval[0]
+    data_pad[1] = firstval[1]
+    data_pad[-1] = lastvals[1] 
+    data_pad[-2] = lastvals[0]
     new_data = numpy.zeros(44100)
     x = numpy.zeros((44098,6)) #create array for outputs
     for i in numba.prange(2, 44100):
