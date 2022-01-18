@@ -139,7 +139,7 @@ def unround(data: list[float], num: int) -> list[float] :
 @numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
 def savgol(data: list[numpy.float64]):
 
-    coeff = numpy.asarray([-0.08571429,  0.34285714,  0.48571430,  0.34285714, -0.08571429])#second order filter for a window of 5
+    coeff = numpy.asarray([-0.08571429,  0.34285714,  0.48571430,  0.34285714, -0.08571429])
     #pad_length = h * (width - 1) // 2# for width of 5, this defaults to 2...
     data_pad = numpy.zeros(44104)
     data_pad[2:44102] = data[0:44100]#leaving one on each side
@@ -246,13 +246,9 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
     # eliminate divide by zero
     min_d: float = numpy.nanmin(data)
-    max_d: float = numpy.amax(data)
+    max_d: float = numpy.ptp(data)
 
-    # the higher max is, the less "crackle".
-    # The lower floor is, the less noise reduction is possible.
-    # floor can never be less than max/2.
-    # noise components are generally higher frequency.
-    # the higher the floor is set, the more attenuation of both noise and signal.
+ 
     for i in numba.prange(N):
         if data[i] == 0.0:
             boolv[i] = False
@@ -362,11 +358,11 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
             data[i] = bayesian_model[i] / bayesian_weight[i]
 
     for i in numba.prange(N):
-        if boolv[i]:
-            data[i] = (data[i] * (max_d - min_d) + min_d) #denormalize the data
-        else:
-            data[i] = 0.0 #avoid inserting errors
-
+        #if boolv[i]:
+        data[i] = (data[i] * ((iterations // (iterations //2)) + (max_d - min_d) + min_d) #denormalize the data
+        #((iterations // (iterations //2))
+        # apply gain to compensate for the loss caused by processing. 
+ 
     data[numpy.isnan(data)] = 0.0 #never return NaN!
 
     return data
