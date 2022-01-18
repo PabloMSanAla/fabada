@@ -45,6 +45,7 @@ Additional thanks to Justin Engel.
 
 from __future__ import division
 
+
 import numpy
 import pyaudio
 import numba
@@ -59,7 +60,7 @@ import dearpygui.dearpygui as dpg
 import snowy
 import matplotlib.cm as cm
 import array
-
+from decimal import *
 
 @numba.jit(numba.float64[:](numba.float64[:], numba.int32, numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
 def shift1d(arr : list[numpy.float64], num: int, fill_value: list[numpy.float64]) -> list[numpy.float64] :
@@ -129,64 +130,76 @@ def unround(data: list[float], num: int) -> list[float] :
 #because numpy's zeroth array is the Y axis, we have to do this in the 1st dimension to shift the X axis
 #if the arrays are not the same size, don't attempt to use coordinates for fill value- it will fail.
 
+#https://stackoverflow.com/questions/53550764/python-numpy-is-there-a-faster-way-to-convolve
 
-#https://github.com/h-jia/savgol_filter_gpu/blob/master/savgol.py
-#borrowed/modified from Hong Jia's torch savitzky–Golay filter
-#5 width, second order filter.
-@numba.jit(numba.float64[:](numba.float64[:],numba.float64), nopython=True, parallel=True, nogil=True,cache=True)
-def savgol(data: list[numpy.float64],divisor:numpy.float64 ):
 
-    coeff = [-0.08571429,  0.34285714,  0.48571429,  0.34285714, -0.08571429]#second order filter for a window of 5
+
+
+
+
+#5 width
+@numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
+def savgol(data: list[numpy.float64]):
+
+    coeff = numpy.asarray([-0.08571429,  0.34285714,  0.48571429,  0.34285714, -0.08571429])#second order filter for a window of 5
     #pad_length = h * (width - 1) // 2# for width of 5, this defaults to 2...
     data_pad = numpy.zeros(44104)
-    data_pad[2:44102] = data[0:44100]#leaving two on each side
-    data_pad[0] = data[0]
-    data_pad[1] = data[0]
+    data_pad[2:44102] = data[0:44100]#leaving one on each side
+    firstval =  2* data[0] - data[2:0:-1]
+    lastvals = 2* data[-1] - data[-2:-4:-1]
+    data_pad[0:1] = firstval
+    data_pad[-2:-1] = lastvals # perform signal smoothing to reduce spurius data at edge
     data_pad[44101] = data[44100] #performs the constant padding of two without numpy.pad
     data_pad[44102] = data[44100]
     new_data = numpy.zeros(44100)
-    x = numpy.zeros(36* 44098).reshape(6,44098,6) #create array for outputs
+    x = numpy.zeros((44098,6)) #create array for outputs
     for i in numba.prange(2, 44100):
-        x[0,i - 2,0] =  (data_pad[i - 2] * coeff[0])
-        x[0, i - 2,1] =  (data_pad[i - 2] * coeff[1])
-        x[0, i - 2,2] = (data_pad[i - 2] * coeff[2])
-        x[0, i - 2,3] =  (data_pad[i - 2] * coeff[3])
-        x[0, i - 2,4] = (data_pad[i - 2] * coeff[4])
-        x[1,i - 2,0] =  (data_pad[i - 1] * coeff[0])
-        x[1, i - 2,1] =  (data_pad[i - 1] * coeff[1])
-        x[1, i - 2,2] =  (data_pad[i - 1] * coeff[2])
-        x[1, i - 2,3] =  (data_pad[i - 1] * coeff[3])
-        x[1, i - 2,4] = (data_pad[i - 1] * coeff[4])
-        x[2,i - 2,0] =  (data_pad[i] * coeff[0])
-        x[2, i - 2,1] =  (data_pad[i ] * coeff[1])
-        x[2, i - 2,2] =  (data_pad[i] * coeff[2])
-        x[2, i - 2,3] =  (data_pad[i] * coeff[3])
-        x[2, i - 2,4] =  (data_pad[i] * coeff[4])
-        x[3,i - 2,0] =  (data_pad[i + 1] * coeff[0])
-        x[3, i - 2,1] =  (data_pad[i + 1] * coeff[1])
-        x[3, i - 2,2] =  (data_pad[i + 1] * coeff[2])
-        x[3, i - 2,3] =  (data_pad[i + 1] * coeff[3])
-        x[3, i - 2,4] = (data_pad[i + 1] * coeff[4])
-        x[4,i - 2,0] = (data_pad[i + 2] * coeff[0])
-        x[4, i - 2,1] =  (data_pad[i + 2] * coeff[1])
-        x[4, i - 2,2] =  (data_pad[i + 2] * coeff[2])
-        x[4, i - 2,3] = (data_pad[i + 2] * coeff[3])
-        x[4, i - 2,4] =  (data_pad[i + 2] * coeff[4])
-        x[5,i - 2,0] =   (data_pad[i  + 3] * coeff[0])
-        x[5, i - 2,1] =  (data_pad[i  + 3] * coeff[1])
-        x[5, i - 2,2] =  (data_pad[i + 3] * coeff[2])
-        x[5, i - 2,3] =   (data_pad[i  + 3] * coeff[3])
-        x[5, i - 2,4] =  (data_pad[i + 3] * coeff[4])
+        x[ i - 2,0] =  data_pad[i - 2]
+        x[ i - 2,1] =  data_pad[i - 1]
+        x[ i - 2,2] =  data_pad[i]
+        x[i - 2,3] =  data_pad[i + 1]
+        x[i - 2,4] =  data_pad[i + 2]
+        x[i - 2,5]=  data_pad[i + 3]
 
-                     #create the array of each set of averaging values
+    z = numpy.zeros((44100, 10))  # create array for outputs
 
     for i in numba.prange(44100):
-        new_data[i] = numpy.sum(x[:,i,:])/ divisor #sum the average according to the golay filter method for a 5wide 2nd order filter. Is this correct? idk...
+        for n in numba.prange(10):
+            for k in numba.prange(len(x[0, :])):
+                if n - k >= 0 and len(coeff) > n - k:  # There is no overlap
+                    z[i,k]= x[0, :][k] * coeff[n - k]  # Convolution's definition
+    #numba accelerated simple 1d convolution.
+
+
+        #create the array of each set of averaging values
+   # for i in numba.prange(44100):
+     #   z[i,:] = numpy.correlate(x[i, :],coeff)
+    for i in numba.prange(44100):
+        new_data[i] = numpy.sum(z[i])
     return new_data
 
+def chi2pdffullprecision(chi2_data):
+            # chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
+            #decimal mathematics are required here, because for data sets over 1490 in size,
+            #floating point numbers will just divide down to zero
+            #so, here, we use decimal precision.
+            #this allows us to also prevent overflows if the number is very large.
+            df = 5 #if df is large, it is impossible to get a useful value out of this.
+            gamman = Decimal(chi2_data / 2.)
+            gammas = gamman ** Decimal(df/2-1) # TODO
+            gammaq = Decimal(-chi2_data / 2.).exp() #math.exp doesnt work over -1000
+            gammaz = Decimal(2. * math.lgamma(df / 2.))
+            gamma1 = Decimal(1)
+            gammax = gamma1 / gammaz
+            gammmalarge = gammax * gammas * gammaq
+            return float(gammmalarge)
+    #this code can be used with an objmode lift to calculate the chi2pdf for large or small values.
+    #however, it will still return 0.0 if the value is smaller than 53 points of precision,
+    #and will still return InF if the value is over 19 0s in length
 
-@numba.jit(numba.types.Tuple((numba.int32, numba.float64[:]))(numba.float64[:], numba.float64), nopython=True, parallel=True, nogil=True,cache=True)
-def numba_fabada(data: list[numpy.float64], timex: float) -> (int, list[numpy.float64]):
+
+@numba.jit( numba.float64[:](numba.float64[:], numba.float64, numba.int32), nopython=True, parallel=True, nogil=True,cache=True)
+def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) -> ( list[numpy.float64]):
     # notes:
     # The pythonic way to COPY an array is to do x[:] = y[:]
     # do x=y and it wont copy it, so any changes made to X will also be made to Y.
@@ -232,7 +245,6 @@ def numba_fabada(data: list[numpy.float64], timex: float) -> (int, list[numpy.fl
     min_d: float = numpy.nanmin(data)
     max_d: float = numpy.amax(data)
 
-    evidencesum: float = 0.0
     # the higher max is, the less "crackle".
     # The lower floor is, the less noise reduction is possible.
     # floor can never be less than max/2.
@@ -244,32 +256,30 @@ def numba_fabada(data: list[numpy.float64], timex: float) -> (int, list[numpy.fl
         else:
             boolv[i] = True
 
+    data_mean = numpy.mean(data[data != 0.0])  # get the mean, but only for the data that's not zero, to avoid disto
+
+
+    data_variance = numpy.zeros_like(data)
+    for i in numba.prange(N):
+            data_variance[i] = 1+ (data_mean - data[i])*(data_mean - data[i])
+            #standard deviation plus normalization
+            #https://prvnk10.medium.com/batch-normalization-d6e402add220
 
     for i in numba.prange(N):
             data[i] = (data[i] - min_d) / (max_d - min_d)
 
-    data_est = data[boolv == True]
-    data_mean = numpy.mean(data_est)  # get the mean, but only for the data that's not zero, to avoid distorting the mean
- 
-    true_count = data_est.size
-    data_variance = numpy.zeros_like(data)
-    for i in numba.prange(N):
-            data_variance[i] =  1.0 + (data_mean - data[i])*(data_mean - data[i])   #normalize BEFORE variance
-
-
-    posterior_mean[:] = data[:]
+    posterior_mean[:]= data[:]
     prior_mean[:] = data[:]
     posterior_variance[:] = data_variance[:]
     #fabada figure 14
     for i in numba.prange(N):
-            ja1[i] = ((math.sqrt(data[i])) ** 2)
-            ja2[i] = ((data_variance[i]) * 2)
+            ja1[i] = (0.0 - math.sqrt(data[i]))** 2
+            ja2[i] = (data_variance[i]* 2)
             ja3[i] = math.sqrt(TAU * data_variance[i])
     for i in numba.prange(N):
             ja4[i] = math.exp(-ja1[i] / ja2[i])
     for i in numba.prange(N):
             evidence[i] = ja4[i] / ja3[i]
-    evidence_previous: float = numpy.mean(evidence)
     initial_evidence[:] = evidence[:]
 
     for i in numba.prange(N):
@@ -278,37 +288,14 @@ def numba_fabada(data: list[numpy.float64], timex: float) -> (int, list[numpy.fl
             ja1[i] =  ja1[i] ** 2.0 / data_variance[i]
 
     chi2_data_min = numpy.sum(ja1)
-    chi2_pdf_previous: float = 0.0
-    chi2_pdf_derivative_previous: float = 0.0
 
-    # do df calculation for chi2 residues
-    df = true_count 
-    z = (2. * math.lgamma(df / 2.))
-    hasrun = 0
-    zed = 1
-    divisor = 30.
-    while iterations < 1024: #set a bound on the max number of times we want this to run
-        iterations = iterations +  1
+
+    while 1:
 
         # GENERATES PRIORS
-        prior_mean[:]  = posterior_mean[:]
-        if hasrun == 0 and iterations < 500:
-            prior_mean = savgol(prior_mean,divisor)
-            #replace average with savinsky-golay second order filter for alternating and first runs only.
-            hasrun = 4 ** zed #reset counter
-            zed = zed * 2 #aggressively reduce number of attempts to smooth with savoy-golay
+        prior_mean[:]  = savgol(posterior_mean[:])
 
-        if hasrun > 0:
-            for i in numba.prange(N - 1):
-                prior_mean[i] = prior_mean[i] + posterior_mean[i + 1]
-            for i in numba.prange(N - 1):
-                prior_mean[i + 1] = prior_mean[i + 1] + posterior_mean[i]
-            prior_mean[0] = prior_mean[0] + (posterior_mean[1] + posterior_mean[2]) / 2.
-            prior_mean[-1] = prior_mean[-1] + (posterior_mean[-2] + posterior_mean[-3]) / 2.
-            for i in numba.prange(N):
-                    prior_mean[i] = prior_mean[i] / 3.
-            hasrun = hasrun - 1
-
+        iterations = iterations +  1
 
         prior_variance[:] = posterior_variance[:]
 
@@ -323,66 +310,55 @@ def numba_fabada(data: list[numpy.float64], timex: float) -> (int, list[numpy.fl
                 posterior_mean[i] = (
                             ((prior_mean[i] / prior_variance[i]) + (data[i] / data_variance[i])) * posterior_variance[i])
 
-
-
+        evidence_previous = numpy.mean(evidence)
         # EVALUATE EVIDENCE
         #fabada figure 6: probability distribution calculation	
         for i in numba.prange(N):
-                ja1[i] = ((prior_mean[i] - math.sqrt(data[i])) ** 2)
+                ja1[i] = (prior_mean[i] - math.sqrt(data[i])) ** 2
                 ja2[i] = (2. * (prior_variance[i] + data_variance[i]))
                 ja3[i] = math.sqrt(TAU * (prior_variance[i] + data_variance[i]))
         for i in numba.prange(N):
-                ja4[i] = math.exp(-(ja1[i] / ja2[i]))
+                ja4[i] = math.exp((-ja1[i] / ja2[i]))
         for i in numba.prange(N):
                 evidence[i] = ja4[i] / ja3[i]
 
-        # (math.fsum(evidence) / N) Same thing as numpy.mean but slightly more accurate. Replaces both the mean and the sum calls with JIT'd code..
-        # may or may not be faster/slower but reduces dependency on external library
-        evidencesum = numpy.sum(evidence)
-        evidence_derivative: float = (evidencesum/ true_count) - evidence_previous
+        evidence_derivative: float =  numpy.mean(evidence[boolv == True]) - evidence_previous
+        #in the real world, values are never zero. avoid adding questionables into the evidence
+
+
         # EVALUATE CHI2
-        chi2_data: float = 0.0
         #fabada figure 11
         for i in numba.prange(N):
-            ja4[i] = math.sqrt((data[i] - posterior_mean[i]) ** 2) / (posterior_mean[i] **2)
+            ja4[i] = math.sqrt((data[i] - posterior_mean[i]) ** 2) / (data_variance[i])
         chi2_data = numpy.sum(ja4)
+        if numpy.isnan(chi2_data):
+            chi2_data = data.size #typically this never overflows
 
 
         # COMBINE MODELS FOR THE ESTIMATION
         for i in numba.prange(N):
-            if boolv[i]:
                 model_weight[i] = evidence[i] * chi2_data
 
         for i in numba.prange(N):
-            if boolv[i]:
                 bayesian_weight[i] = bayesian_weight[i] + model_weight[i]
                 bayesian_model[i] = bayesian_model[i] + (model_weight[i] * posterior_mean[i])
 
         # for any data set which is non-trivial. Remember, DF/2 - 1 becomes the exponent! For anything over a few hundred this quickly exceeds float64.
-        # chi2.pdf(x, df) = 1 / (2*gamma(df/2)) * (x/2)**(df/2-1) * exp(-x/2)
-        gamman: numpy.float64 = (chi2_data / 2.)
-        gammas: numpy.float64 = ((gamman) ** z) # TODO
-        gammaq: numpy.float64 = math.exp(-chi2_data / 2.)
-        # for particularily large values, math.exp just returns 0.0
-        # TODO
-        chi2_pdf = (1. / z) * gammas * gammaq
-        # COMBINE MODELS FOR THE ESTIMATION
 
-        chi2_pdf_derivative = chi2_pdf - chi2_pdf_previous
-        chi2_pdf_snd_derivative = chi2_pdf_derivative - chi2_pdf_derivative_previous
-        chi2_pdf_previous = chi2_pdf
-        chi2_pdf_derivative_previous = chi2_pdf_derivative
-        evidence_previous = evidence_derivative
+        if (chi2_data >  data.size) and (evidence_derivative < data_mean):
+            if iterations > iterationcontrol - 10:
+                break# # break if you've succeeded in fitting the data
+                #don't break substantially early.
+
+        if iterations >= iterationcontrol :
+            break #break wherever the user wants it broken.
 
         with numba.objmode(current=numba.float64):
            current = time.time()
         timerun = (current - start) * 1000
 
         if (int(timerun) > int(timex)):
-            iterations = 1024# also avoid exceeding our time budget
-        if iterations > 48: #also avoid doing too little work?
-            if ((chi2_data > data.size) and (chi2_pdf_snd_derivative >= 0) and (evidence_derivative < 0)):
-                iterations = 1024# #also break if you've succeeded in fitting the data
+            break#  avoid exceeding our time budget, regardless
 
 
 
@@ -402,12 +378,12 @@ def numba_fabada(data: list[numpy.float64], timex: float) -> (int, list[numpy.fl
         else:
             data[i] = 0.0 #avoid inserting errors
 
+    data[numpy.isnan(data)] == 0.0 #never return NaN!
 
-
-    return iterations, data
+    return data
 
 class FilterRun(Thread):
-    def __init__(self, rb, pb, channels, processing_size, dtype,work,time,floor,iterations,clean,run):
+    def __init__(self, rb, pb, channels, processing_size, dtype,work,time,floor,run):
         super(FilterRun, self).__init__()
         self.running = True
         self.rb = rb
@@ -422,13 +398,12 @@ class FilterRun(Thread):
         self.work = work
         self.time = time
         self.floor = floor
-        self.iterations = iterations
-        self.cleanspecbuf = clean
         self.enabled = run
         self.NFFT = 512
         self.noverlap=446
         self.SM = cm.ScalarMappable(cmap="turbo")
         self.last = [0.,0.]
+        self.iterationcontrol = 64
 
 
 
@@ -438,36 +413,21 @@ class FilterRun(Thread):
 
         numpy.copyto(self.buffer, self.rb.read(self.processing_size).astype(dtype=numpy.float64))
         #self.buffer contains (44100,2) of numpy.float32 audio values sampled with pyaudio
-        iterationz = 0
         if self.enabled == False:
             self.processedrb.write(self.buffer.astype(dtype=self.dtype), error=True)
-            Z, freqs, t = mlab.specgram(self.buffer2[:, 0], NFFT=256, Fs=44100, detrend=None, window=None, noverlap=223,
-                                        pad_to=None, scale_by_freq=None, mode="magnitude")
-
-            # https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
-            arr_color = self.SM.to_rgba(Z, bytes=False, norm=True)
-            arr_color = arr_color[:30, :, :]  # we just want the last bits where the specgram data lies.
-            arr_color = snowy.resize(arr_color, width=60, height=100)  # in the future, this width will be 60.
-            arr_color = numpy.rot90(arr_color)  # rotate it and jam it in the buffer lengthwise
-            self.cleanspecbuf.growing_write(arr_color)
             return
 
         for i in range(self.channels):
-
-            for z in range(64):
-                self.buffer2[z, i] = (self.buffer2[z, i]/(64 - z) + self.last[i])/2
-            #smooth each frame's end according to the start of the previous frame.
 
             x = numpy.sign(self.last[i])
             fft = numpy.fft.rfft(self.buffer[:, i])
             zeros = numpy.zeros_like(fft)
             band = numpy.zeros_like(fft)
-            band[21:11025] = fft[21:11025]
-            iteration,  band = numba_fabada(numpy.fft.irfft(band),450)
-            band = numpy.fft.rfft(band)
-            zeros[21:11025] = band[21:11025]
+            band[18:11025] = fft[18:11025]#use a wide passband but filter stuff that will confuse us
+            bandz = numba_fabada(numpy.fft.irfft(band),480,self.iterationcontrol)
+            band = numpy.fft.rfft(bandz)
+            zeros[18:11025] = band[18:11025]
             self.buffer2[:, i] = numpy.fft.irfft(zeros)
-            iterationz = iterationz + iteration
 
             v = []
             for b in range(14):
@@ -478,26 +438,11 @@ class FilterRun(Thread):
                      #zero crossing detected!
                         self.buffer2[44086 + b, i] = 0.0 #insert zero crossing fix
 
-
-
-
-
-            self.buffer2[:, i] = round(self.buffer2[:, i],128)#soften asymetrically to reduce perception of the fade
-            self.buffer2[44036:44100, i] = unround(self.buffer2[44036:44100, i],64)
+            self.buffer2[:, i] = round(self.buffer2[:, i],128)#soften asymetrically to reduce perception of the fade?
+            self.buffer2[43700:44100, i] = unround(self.buffer2[43700:44100, i],400)
             self.last[i] = self.buffer2[-1, i] #copy out last value of previous array
 
-        self.iterations = iterationz
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
-
-        Z, freqs, t = mlab.specgram(self.buffer2[:, 0], NFFT=256, Fs=44100, detrend=None, window=None, noverlap=223,
-                                    pad_to=None, scale_by_freq=None, mode="magnitude")
-
-        # https://stackoverflow.com/questions/39359693/single-valued-array-to-rgba-array-using-custom-color-map-in-python
-        arr_color = self.SM.to_rgba(Z, bytes=False,norm=True)
-        arr_color = arr_color[:50, :, :]  # we just want the last bits where the specgram data lies.
-        arr_color = snowy.resize(arr_color, width=60, height=100)  # in the future, this width will be 60.
-        arr_color = numpy.rot90(arr_color)#rotate it and jam it in the buffer lengthwise
-        self.cleanspecbuf.growing_write(arr_color)
 
     def run(self):
         while self.running:
@@ -545,29 +490,22 @@ class StreamSampler(object):
         self._sample_rate = sample_rate
         self._channels = channels
         self.ticker = 0
-        # self.rb = RingBuffer((int(sample_rate) * 5, channels), dtype=numpy.dtype(dtype))
         self.rb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
-                                     seconds=8,  # Buffer size (need larger than processing size)[seconds * sample_rate]
+                                     seconds=6,  # Buffer size (need larger than processing size)[seconds * sample_rate]
                                      buffer_delay=0,  # #this buffer doesnt need to have a size
                                      dtype=numpy.dtype(dtype))
 
         self.processedrb = AudioFramingBuffer(sample_rate=sample_rate, channels=channels,
-                                              seconds=8,
+                                              seconds=6,
                                               # Buffer size (need larger than processing size)[seconds * sample_rate]
                                               buffer_delay=1,
                                               # as long as fabada completes in O(n) of less than the sample size in time
                                               dtype=numpy.dtype(dtype))
-        self.cleanspectrogrambuffer = RingBuffer((660, 100, 4),dtype=numpy.float32)
-        self.cleanspectrogrambuffer.maxsize = int(9900)
-        self.texture2 = [1., 1., 1., 1.] * 500 * 100
-        self.texture2 = numpy.asarray( self.texture2,dtype=numpy.float32)
-        self.texture2 = self.texture2.reshape((100, 500, 4)) #create and shape the textures. Backwards.
         self.work = 1. #included only for completeness
         self.time = 495 #generally, set this to whatever timeframe you want it done in. 44100 samples = 500ms window.
         self.floor = 8192#unknown, seems to do better with higher values
-        self.iterations = 0
         self.enabled = True
-        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.work,self.time, self.floor,self.iterations,self.cleanspectrogrambuffer,self.enabled)
+        self.filterthread = FilterRun(self.rb, self.processedrb, self._channels, self._processing_size, self.dtype,self.work,self.time, self.floor,self.enabled)
         self.micindex = micindex
         self.speakerindex = speakerindex
         self.micstream = None
@@ -797,17 +735,7 @@ class StreamSampler(object):
     listen = stream_start  # Just set a new variable to the same method
 
 
-texture_data = []
-for i in range(0, 500 * 100):
-    texture_data.append(255 / 255)
-    texture_data.append(0)
-    texture_data.append(255 / 255)
-    texture_data.append(255 / 255)
 
-    # patch from joviex- the enumeration in the online docs showing .append doesn't work for larger textures
-
-raw_data2 = array.array('f', texture_data)
-    #declare globals here. These are universally accessible.
 
 if __name__ == "__main__":
     # after importing numpy, reset the CPU affinity of the parent process so
@@ -822,22 +750,6 @@ if __name__ == "__main__":
         quit()
 
 
-
-    def update_spectrogram_textures():
-        # new_color = implement buffer read
-        if len(SS.cleanspectrogrambuffer) > 60:
-            SS.texture2 = shift3dximg(SS.texture2, -1, numpy.rot90(SS.cleanspectrogrambuffer.read(1), 1))
-        if len(SS.cleanspectrogrambuffer) > 180: #clearly this is wrooong
-            discard = SS.cleanspectrogrambuffer.read(1) #sneakily throw away rows until we're back to sanity
-
-
-
-
-    def iter():
-        dpg.set_value('iterations', f"Fabada current iterations: {SS.filterthread.iterations}")
-        update_spectrogram_textures() #update the screen contents once every frame
-        dpg.set_value("clean_texture", SS.texture2)
-
     def fabadatoggle(sender, app_data,user_data):
         if SS.filterthread.enabled == True:
             dpg.set_item_label("toggleswitch", "Enable")
@@ -846,32 +758,26 @@ if __name__ == "__main__":
             dpg.set_item_label("toggleswitch", "Disable")
             SS.filterthread.enabled = True
 
-
+    def iterationset(sender, app_data,user_data):
+        SS.filterthread.iterationcontrol = int(app_data)
 
     dpg.create_context()
-    dpg.create_viewport(title='FABADA Streamclean', height=300, width=500)
+    dpg.create_viewport(title='FABADA Streamclean', height=200, width=500)
     dpg.setup_dearpygui()
     dpg.configure_app(auto_device=True)
 
+    with dpg.window(height = 200, width = 500) as main_window:
+        dpg.add_text("Welcome to FABADA! 1S delay typical.")
+        dpg.add_text("Adjust the slider to your preference.")
 
-
-
-    with dpg.texture_registry():
-        dpg.add_raw_texture(500, 100, raw_data2, format=dpg.mvFormat_Float_rgba, tag="clean_texture")
-
-
-    with dpg.window(height = 300, width = 500) as main_window:
-        dpg.add_text("Welcome to FABADA! 1S delay typical")
         dpg.add_text(f"Your speaker device is: ({SS.speakerdevice})")
         dpg.add_text(f"Your microphone device is:({SS.micdevice})")
-        dpg.add_text("Fabada current iterations: 0",tag="iterations")
+        dpg.add_slider_int(label="Amount of noise reduction", tag="iterations",max_value = 1024, min_value = 1, default_value =64, callback=iterationset)
         dpg.add_button(label="Disable", tag="toggleswitch", callback=fabadatoggle)
-        dpg.add_image("clean_texture")
 
     dpg.set_primary_window(main_window,True)  # TODO: Added Primary window, so the dpg window fills the whole Viewport
 
     dpg.show_viewport()
     while dpg.is_dearpygui_running():
-        iter()#this runs once a frame.
         dpg.render_dearpygui_frame()
     close() #clean up the program runtime when the user closes the window
