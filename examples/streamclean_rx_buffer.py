@@ -139,7 +139,7 @@ def unround(data: list[float], num: int) -> list[float] :
 @numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
 def savgol(data: list[numpy.float64]):
 
-    coeff = numpy.asarray([-0.08571429,  0.34285714,  0.48571429,  0.34285714, -0.08571429])#second order filter for a window of 5
+    coeff = numpy.asarray([-0.08571429,  0.34285714,  0.48571430,  0.34285714, -0.08571429])#second order filter for a window of 5
     #pad_length = h * (width - 1) // 2# for width of 5, this defaults to 2...
     data_pad = numpy.zeros(44104)
     data_pad[2:44102] = data[0:44100]#leaving one on each side
