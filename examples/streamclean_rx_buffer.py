@@ -49,17 +49,12 @@ from __future__ import division
 import numpy
 import pyaudio
 import numba
-from matplotlib import mlab
 from np_rw_buffer import AudioFramingBuffer
-from np_rw_buffer import RingBuffer
 from threading import Thread
 import math
 import time
 from time import sleep
 import dearpygui.dearpygui as dpg
-import snowy
-import matplotlib.cm as cm
-import array
 from decimal import *
 
 @numba.jit(numba.float64[:](numba.float64[:], numba.int32, numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
@@ -378,7 +373,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
         else:
             data[i] = 0.0 #avoid inserting errors
 
-    data[numpy.isnan(data)] == 0.0 #never return NaN!
+    data[numpy.isnan(data)] = 0.0 #never return NaN!
 
     return data
 
@@ -401,7 +396,6 @@ class FilterRun(Thread):
         self.enabled = run
         self.NFFT = 512
         self.noverlap=446
-        self.SM = cm.ScalarMappable(cmap="turbo")
         self.last = [0.,0.]
         self.iterationcontrol = 64
 
@@ -437,10 +431,10 @@ class FilterRun(Thread):
                     if (abs(v[b]) + abs(v[b+1])) == 2 and abs((v[b]) + (v[b+1])) != 2:#if -1 + -1 or 1 + 1, not a zero crossing
                      #zero crossing detected!
                         self.buffer2[44086 + b, i] = 0.0 #insert zero crossing fix
-
-            self.buffer2[:, i] = round(self.buffer2[:, i],128)#soften asymetrically to reduce perception of the fade?
-            self.buffer2[43700:44100, i] = unround(self.buffer2[43700:44100, i],400)
+                    
             self.last[i] = self.buffer2[-1, i] #copy out last value of previous array
+            self.buffer2[:, i] = round(self.buffer2[:, i],440)#
+            self.buffer2[43700:44100, i] = unround(self.buffer2[43700:44100, i],400)
 
         self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
 
