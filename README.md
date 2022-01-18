@@ -100,6 +100,33 @@ we are currently working on uploading the package to the Conda system.
 
 ## Usage
 
+## Astronomy .fits usage
+
+For the Astronomical community we give another file, the fabadaCMD.py file that will help you run
+fabada for a fits file from the command line. The requisites to use this file is to have installed the
+astropy and argparse packages. The positional arguments of this file are:
+
+- filename: Which is the string variable of the localization and name of the image fits file
+- noise: Either a float number of the estimation of the variance of the image or a string for the containing fits file
+
+In this example you will use fabada to denoise a [SDSS](https://www.sdss.org/) mosaic image of the [NGC2870](http://simbad.u-strasbg.fr/simbad/sim-basic?Ident=ngc2870&submit=SIMBAD+search) galaxy using the [fabadaCMD.py](https://github.com/PabloMSanAla/fabada/blob/master/examples/fabadaCMD.py) file. The image file [ngc2870_sloan_r.fits](https://github.com/PabloMSanAla/fabada/blob/master/examples/ngc2870_sloan_r.fits) is a mosaic image in the R band with an associate noise of roughly 0.001 counts, which is also located in the file [ngc2870_sloan_r_noise.fits](https://github.com/PabloMSanAla/fabada/blob/master/examples/ngc2870_sloan_r_noise.fits). This value of the noise is a simple estimation of the variance of the image but you can either give your own estimation or fits file of the error. To run fabada from the command line you only have to run
+
+```bash
+    python fabadaCMD.py ngc2870_sloan_r.fits ngc2870_sloan_r_noise.fits
+```
+
+and the result will be saved in a fits file.
+
+If you want to see the other optional parameters you only have to run
+
+```bash
+    python fabadaCMD.py -h
+```
+
+in the shell and the optional parameters along a short description will be shown.
+
+## General Python usage
+
 Along with the package two examples are given.
 
 - _fabada_demo_image.py_
