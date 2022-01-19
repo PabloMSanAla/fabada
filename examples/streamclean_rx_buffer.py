@@ -50,7 +50,7 @@ in your windows settings for default mic and speaker, respectively, this program
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
 https://vb-audio.com/Cable/ is an example of a free audio cable.
-The program expects 44100hz audio, 16 bit, two channel, but can be configured to work with anything
+The program expects and requires 48000hz audio, 16 bit, two channel, but mono will also work as long as the device is configured for two channels.
 Additional thanks to Justin Engel.
 """
 
