@@ -449,12 +449,40 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
     #achieve 6th order wavelet decomposition from input datum.
 
+    data_beta = adjacentaverage(data)
+    # get an array filled with the mean
+    x9 = numpy.mean(data_beta)
+    data_mean_beta = numpy.full((data_beta.size), x9)
+    # get the variance for each element from the mean
+    data_variance_beta = numpy.zeros_like(data)
+    data_residues = numpy.zeros_like(data)
+    for i in numba.prange(data.size):
+        data_variance_beta[i] = abs(data_beta[i] - data_mean_beta[i])
+
+    # subtract the averages from the original
+    for i in numba.prange(data.size):
+        data_residues[i] = abs(data[i] - data_beta[i])
+    x10 = numpy.mean(data_residues)
+    data_mean_residues   = numpy.full((data.size),x10)
+    data_variance_residues = numpy.zeros_like(data)
+    for i in numba.prange(data.size):
+        data_variance_residues[i] = abs(data_residues[i] - data_mean_residues[i])
+
+    # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
+    minimum = 1498258522.00  # in my experience this is the minimum amount of noise present
+    variance5 = numpy.ptp(data_variance_residues)
+    data_variance_minimum = numpy.full((16384,), minimum)
+    data = [x * variance5 for x in data_variance_residues]
+    for i in numba.prange(data.size):
+        data_variance_residues[i] = variance5 * data_variance_residues[i]
 
 
-
+    dd = numpy.ptp(data)
+    xx = data.mean(data)
     data_variance = numpy.zeros_like(data)
+    redline = (dd + xx/2)
     for i in numba.prange(N):
-            data_variance[i] = 1+ (data_mean - data[i])*(data_mean - data[i])
+            data_variance[i] = redline  + data_variance_residues[i]
             #standard deviation plus normalization
             #https://prvnk10.medium.com/batch-normalization-d6e402add220
 
@@ -487,7 +515,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
         # GENERATES PRIORS
         #combines linear regression with weighted smoothing
-        
+
 
         prior_mean[:]  = posterior_mean[:]
 
@@ -619,6 +647,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
         for i in numba.prange(N):
                 bayesian_weight[i] = bayesian_weight[i] + model_weight[i]
+        for i in numba.prange(N):
                 bayesian_model[i] = bayesian_model[i] + (model_weight[i] * posterior_mean[i])
 
         if iterations >= iterationcontrol :
@@ -643,9 +672,8 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
     for i in numba.prange(N):
         #if boolv[i]:
-        data[i] = data[i] * ((iterations // (iterations //2)) + (max_d - min_d) + min_d) #denormalize the data
+        data[i] = (data[i] + (max_d - min_d) + min_d) #denormalize the data
         #((iterations // (iterations //2))
-        # apply gain to compensate for the loss caused by processing. 
 
     for i in numba.prange(N):
         if (numpy.isnan(data[i])):
