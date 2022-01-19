@@ -356,7 +356,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
     # this implementation of FABADA is not optimized for 2d arrays, however, it is easily swapped by changing the means
     # estimation and by simply changing all other code to iterate over 2d instead of 1d
     # care must be taken with numba parallelization/vectorization
-
+    data = numpy.asarray(data)
     with numba.objmode(start=numba.float64):
         start = time.time()
 
@@ -469,16 +469,14 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
         data_variance_residues[i] = abs(data_residues[i] - data_mean_residues[i])
 
     # we want the algorithm to speculatively assume the variance is smaller for data that slopes well per sample.
-    minimum = 1498258522.00  # in my experience this is the minimum amount of noise present
     variance5 = numpy.ptp(data_variance_residues)
-    data_variance_minimum = numpy.full((16384,), minimum)
-    data = [x * variance5 for x in data_variance_residues]
+
     for i in numba.prange(data.size):
         data_variance_residues[i] = variance5 * data_variance_residues[i]
 
 
     dd = numpy.ptp(data)
-    xx = data.mean(data)
+    xx = numpy.mean(data)
     data_variance = numpy.zeros_like(data)
     redline = (dd + xx/2)
     for i in numba.prange(N):
@@ -593,18 +591,10 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
         #we now have noise smoothed wavelet transforms for 1-6 HAAR envelopes.
 
-
-
-
         prior_mean[:] = waveletinverse(waveletx1)
 
 
         #perform repeated, iterative smoothing and wavelet reconvolution.
-        #its fuckin magic!
-        #furthermore, because we use doubling, we can double each time.
-        #we can go down to quite a bit of frequency accuracy.
-
-
 
         iterations = iterations +  1
 
@@ -614,7 +604,6 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
         #fabada figure 8?
         for i in numba.prange(N):
                 posterior_variance[i] = 1. / (1. / data_variance[i] + 1. / prior_variance[i])
-
 
     #fabada figure 7
         for i in numba.prange(N):
