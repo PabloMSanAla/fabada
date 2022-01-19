@@ -524,14 +524,14 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
         waveletx5[:] = waveletnth(waveletx4)  # 3000
         waveletx6[:] = waveletnth(waveletx5)  # 1500
 
-        savigol6x = adjacentaverage(waveletx6)
+        savigol6x = savgol(waveletx6)
         arma6x = arma(waveletx6)
         for i in numba.prange(waveletx6.size):
             waveletx6[i] = (savigol6x[i] + arma6x[i])/2 #average our results for best fit
 
         inverted5 = waveletinverse(waveletx6) #deconvolute our 6th wavelet
 
-        savigol5x = adjacentaverage(waveletx5)
+        savigol5x = savgol(waveletx5)
         arma5x = arma(waveletx5)
 
         for i in numba.prange(waveletx5.size):
@@ -579,7 +579,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
         inverted1 = waveletinverse(waveletx2)
 
-        savigol1x = adjacentaverage(waveletx1)
+        savigol1x = savgol(waveletx1)
         arma1x = arma(waveletx1)
 
         for i in numba.prange(waveletx1.size):
@@ -592,9 +592,12 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
         #we now have noise smoothed wavelet transforms for 1-6 HAAR envelopes.
 
         prior_mean[:] = waveletinverse(waveletx1)
-
+        prior_mean[:] = adjacentaverage(prior_mean)
 
         #perform repeated, iterative smoothing and wavelet reconvolution.
+        #use savinsky-golay for ONLY top two wavelet transforms-
+        #preserve lower frequency data better.
+        #run one last cycle of averaging in the deconvoluted domain per iteration.
 
         iterations = iterations +  1
 
@@ -1057,7 +1060,7 @@ if __name__ == "__main__":
     with dpg.window(height = 100, width = 400) as main_window:
         dpg.add_text("Welcome to FABADA! 1S delay typical.")
         dpg.add_text("Adjust the slider to your preference.")
-        dpg.add_slider_int(tag="iterations",max_value = 255, min_value = 1, default_value =64, callback=iterationset)
+        dpg.add_slider_int(tag="iterations",max_value = 100, min_value = 1, default_value =64, callback=iterationset)
         dpg.add_button(label="Disable", tag="toggleswitch", callback=fabadatoggle)
 
     dpg.set_primary_window(main_window,True)  # TODO: Added Primary window, so the dpg window fills the whole Viewport
