@@ -538,7 +538,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
             waveletx5[i] = (savigol5x[i] + arma5x[i])/2 #average our results for best fit
 
         for i in numba.prange(waveletx5.size):
-            waveletx5[i] = (waveletx5[i]  + inverted5[i])/2
+            waveletx5[i] = (waveletx5[i]  + inverted5[i])
             #reconstitute our coefficients from the higher array
 
         inverted4 = waveletinverse(waveletx5)
@@ -550,7 +550,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
             waveletx4[i] = (savigol4x[i] + arma4x[i]) / 2  # average our results for best fit
 
         for i in numba.prange(waveletx5.size):
-            waveletx4[i] = (waveletx4[i] + inverted4[i]) / 2
+            waveletx4[i] = (waveletx4[i] + inverted4[i])
                 # reconstitute our coefficients from the higher array
 
         inverted3 = waveletinverse(waveletx4)
@@ -562,7 +562,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
             waveletx3[i] = (savigol3x[i] + arma3x[i]) / 2  # average our results for best fit
 
         for i in numba.prange(waveletx5.size):
-            waveletx4[i] = (waveletx3[i] + inverted3[i]) / 2
+            waveletx4[i] = (waveletx3[i] + inverted3[i])
                 # reconstitute our coefficients from the higher array
 
         inverted2 = waveletinverse(waveletx3)
@@ -574,7 +574,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
             waveletx2[i] = (savigol2x[i] + arma2x[i]) / 2  # average our results for best fit
 
         for i in numba.prange(waveletx5.size):
-            waveletx2[i] = (waveletx2[i] + inverted2[i]) / 2
+            waveletx2[i] = (waveletx2[i] + inverted2[i])
                 # reconstitute our coefficients from the higher array
 
         inverted1 = waveletinverse(waveletx2)
@@ -586,7 +586,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
             waveletx1[i] = (savigol1x[i] + arma1x[i]) / 2  # average our results for best fit
 
         for i in numba.prange(waveletx5.size):
-            waveletx1[i] = (waveletx1[i] + inverted1[i]) / 2
+            waveletx1[i] = (waveletx1[i] + inverted1[i]) 
             # reconstitute our coefficients from the higher array
 
         #we now have noise smoothed wavelet transforms for 1-6 HAAR envelopes.
@@ -1060,7 +1060,7 @@ if __name__ == "__main__":
     with dpg.window(height = 100, width = 400) as main_window:
         dpg.add_text("Welcome to FABADA! 1S delay typical.")
         dpg.add_text("Adjust the slider to your preference.")
-        dpg.add_slider_int(tag="iterations",max_value = 100, min_value = 1, default_value =64, callback=iterationset)
+        dpg.add_slider_int(tag="iterations",max_value = 255, min_value = 1, default_value =64, callback=iterationset)
         dpg.add_button(label="Disable", tag="toggleswitch", callback=fabadatoggle)
 
     dpg.set_primary_window(main_window,True)  # TODO: Added Primary window, so the dpg window fills the whole Viewport
