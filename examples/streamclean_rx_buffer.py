@@ -50,7 +50,9 @@ in your windows settings for default mic and speaker, respectively, this program
 So, you can configure another program to output noisy sound to the speaker side of a virtual audio device, and configure
 the microphone end of that device as your system microphone, then this program will automatically pick it up and run it.
 https://vb-audio.com/Cable/ is an example of a free audio cable.
-The program expects and requires 48000hz audio, 16 bit, two channel, but mono will also work as long as the device is configured for two channels.
+The program expects and requires 32000hz audio, 16 bit, two channel, but mono will also work as long as the device is configured for two channels.
+#other sample rates are possible, but utilize more processing power and must also be divisible by 16.
+Higher rates are possible on more powerful hardware.
 Additional thanks to Justin Engel.
 """
 
@@ -67,6 +69,8 @@ import time
 from time import sleep
 import dearpygui.dearpygui as dpg
 from decimal import *
+from numba.experimental import jitclass
+
 
 @numba.jit(numba.float64[:](numba.float64[:], numba.int32, numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
 def shift1d(arr : list[numpy.float64], num: int, fill_value: list[numpy.float64]) -> list[numpy.float64] :
@@ -237,7 +241,6 @@ def medianfilter(data):
 
 
 
-
 #5th order autoregressive rolling mean
 @numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
 def arma(data):
@@ -377,47 +380,11 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
     prior_mean = numpy.zeros_like(data)
     prior_variance = numpy.zeros_like(data)
     boolv = numpy.zeros_like(data)
-
-    waveletx1 = numpy.zeros_like(data)
-    waveletx2 = numpy.zeros_like(data)
-    waveletx3 = numpy.zeros_like(data)
-    waveletx4 = numpy.zeros_like(data)
-    waveletx5 = numpy.zeros_like(data)
-    waveletx6 = numpy.zeros_like(data)
-
-    inverted1 = numpy.zeros((waveletx1.size))
-    inverted2 = numpy.zeros((waveletx1.size))
-    inverted3 = numpy.zeros((waveletx2.size))
-    inverted4 = numpy.zeros((waveletx3.size))
-    inverted5 = numpy.zeros((waveletx4.size))
-    inverted6 = numpy.zeros((waveletx5.size))
-    inverted7 = numpy.zeros((waveletx6.size))
+        
+    wavelets= numpy.zeros((data.size,8))
+    #initialize an array to contain the 8 wavelet arrays.
 
 
-    savigol1x = numpy.zeros_like(waveletx1)
-    savigol2x = numpy.zeros_like(waveletx2)
-    savigol3x = numpy.zeros_like(waveletx3)
-    savigol4x = numpy.zeros_like(waveletx4)
-    savigol5x = numpy.zeros_like(waveletx5)
-    savigol6x = numpy.zeros_like(waveletx6)
-
-
-
-    arma1x = numpy.zeros_like(waveletx1)
-    arma2x = numpy.zeros_like(waveletx2)
-    arma3x = numpy.zeros_like(waveletx3)
-    arma4x = numpy.zeros_like(waveletx4)
-    arma5x = numpy.zeros_like(waveletx5)
-    arma6x = numpy.zeros_like(waveletx6)
-
-
-
-    avg1 = numpy.zeros_like(waveletx1)
-    avg2 = numpy.zeros_like(waveletx2)
-    avg3 = numpy.zeros_like(waveletx3)
-    avg4 = numpy.zeros_like(waveletx4)
-    avg5 = numpy.zeros_like(waveletx5)
-    avg6 = numpy.zeros_like(waveletx6)
 
 
 
@@ -439,12 +406,19 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
             boolv[i] = True
 
     data_mean = numpy.mean(data[data != 0.0])  # get the mean, but only for the data that's not zero, to avoid disto
-    waveletx1 = wavelet(data)#48000 hz wavelet envelope
-    waveletx2[:] = waveletnth(waveletx1)#24000
-    waveletx3[:] = waveletnth(waveletx2)#12000
-    waveletx4[:] = waveletnth(waveletx3)#6000
-    waveletx5[:] = waveletnth(waveletx4)#3000
-    waveletx6[:] = waveletnth(waveletx5)#1500
+    
+   
+    wavelets[:,0] = wavelet(data)
+    wavelets[:,1]  = waveletnth(wavelets[:,0])
+    wavelets[:,2]  = waveletnth(wavelets[:,1])
+    wavelets[:,3]  = waveletnth(wavelets[:,2])
+    wavelets[:,4]  = waveletnth(wavelets[:,3])
+    wavelets[:,5]  = waveletnth(wavelets[:,4])
+    wavelets[:,6]  = waveletnth(wavelets[:,5])
+    wavelets[:,7]  = waveletnth(wavelets[:,6])
+
+    #initialize the arrays containing our 6th order wavelets
+
 
 
     #achieve 6th order wavelet decomposition from input datum.
@@ -507,97 +481,72 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
             ja1[i] =  ja1[i] ** 2.0 / data_variance[i]
 
     chi2_data_min = numpy.sum(ja1)
-
-
+    hasrun = False
+    
+    
+    
+    waveletsize = wavelets[:,0].size
+    waveletperf = waveletsize//2
+    process = numpy.zeros((waveletperf))        
+    product = numpy.zeros((waveletsize))
     while 1:
 
         # GENERATES PRIORS
-        #combines linear regression with weighted smoothing
-
-
-        prior_mean[:]  = posterior_mean[:]
-
-        waveletx1 = wavelet(prior_mean)  # 48000 hz wavelet envelope
-        waveletx2[:] = waveletnth(waveletx1)  # 24000
-        waveletx3[:] = waveletnth(waveletx2)  # 12000
-        waveletx4[:] = waveletnth(waveletx3)  # 6000
-        waveletx5[:] = waveletnth(waveletx4)  # 3000
-        waveletx6[:] = waveletnth(waveletx5)  # 1500
-
-        savigol6x = savgol(waveletx6)
-        arma6x = arma(waveletx6)
-        for i in numba.prange(waveletx6.size):
-            waveletx6[i] = (savigol6x[i] + arma6x[i])/2 #average our results for best fit
-
-        inverted5 = waveletinverse(waveletx6) #deconvolute our 6th wavelet
-
-        savigol5x = savgol(waveletx5)
-        arma5x = arma(waveletx5)
-
-        for i in numba.prange(waveletx5.size):
-            waveletx5[i] = (savigol5x[i] + arma5x[i])/2 #average our results for best fit
-
-        for i in numba.prange(waveletx5.size):
-            waveletx5[i] = (waveletx5[i]  + inverted5[i])
-            #reconstitute our coefficients from the higher array
-
-        inverted4 = waveletinverse(waveletx5)
-
-        savigol4x = adjacentaverage(waveletx4)
-        arma4x = arma(savigol4x)
-
-        for i in numba.prange(waveletx4.size):
-            waveletx4[i] = (savigol4x[i] + arma4x[i]) / 2  # average our results for best fit
-
-        for i in numba.prange(waveletx5.size):
-            waveletx4[i] = (waveletx4[i] + inverted4[i])
-                # reconstitute our coefficients from the higher array
-
-        inverted3 = waveletinverse(waveletx4)
-
-        savigol3x = adjacentaverage(waveletx3)
-        arma3x = arma(savigol3x)
-
-        for i in numba.prange(waveletx3.size):
-            waveletx3[i] = (savigol3x[i] + arma3x[i]) / 2  # average our results for best fit
-
-        for i in numba.prange(waveletx5.size):
-            waveletx4[i] = (waveletx3[i] + inverted3[i])
-                # reconstitute our coefficients from the higher array
-
-        inverted2 = waveletinverse(waveletx3)
-
-        savigol2x = adjacentaverage(waveletx2)
-        arma2x = arma(waveletx2)
-
-        for i in numba.prange(waveletx2.size):
-            waveletx2[i] = (savigol2x[i] + arma2x[i]) / 2  # average our results for best fit
-
-        for i in numba.prange(waveletx5.size):
-            waveletx2[i] = (waveletx2[i] + inverted2[i])
-                # reconstitute our coefficients from the higher array
-
-        inverted1 = waveletinverse(waveletx2)
-
-        savigol1x = savgol(waveletx1)
-        arma1x = arma(waveletx1)
-
-        for i in numba.prange(waveletx1.size):
-            waveletx1[i] = (savigol1x[i] + arma1x[i]) / 2  # average our results for best fit
-
-        for i in numba.prange(waveletx5.size):
-            waveletx1[i] = (waveletx1[i] + inverted1[i]) 
-            # reconstitute our coefficients from the higher array
+        
+        if hasrun == True:
+            wavelets[:,0] = wavelet(posterior_mean)
+            wavelets[:,1]  = waveletnth(wavelets[:,0])
+            wavelets[:,2]  = waveletnth(wavelets[:,1])
+            wavelets[:,3]  = waveletnth(wavelets[:,2])
+            wavelets[:,4]  = waveletnth(wavelets[:,3])
+            wavelets[:,5]  = waveletnth(wavelets[:,4])
+            wavelets[:,6]  = waveletnth(wavelets[:,5])
+            wavelets[:,7]  = waveletnth(wavelets[:,6])
+            #recreate our envelopes on successive runs
+        hasrun = True #enable our successive run mechanism after the first iteration
+        
+        
+        
+        for o in range(8):
+            wavelets[0:waveletperf,6-o] = savgol(wavelets[0:waveletperf,6-o])
+            wavelets[waveletperf:waveletsize,6-o] = savgol(wavelets[waveletperf:waveletsize,6-o])
+            #for each wavelet we process, successively iterate over the first and second halves of it.
+            product[:] = waveletinverse(wavelets[:,6-o])
+            wavelets[0:waveletperf,6-o] = product[0:waveletperf] #copy down the changes
+        #now, we've iterated down to 0.
+        
+        prior_mean[:] = waveletinverse(wavelets[:,0])
+        prior_mean[:] = adjacentaverage(prior_mean[:])
 
         #we now have noise smoothed wavelet transforms for 1-6 HAAR envelopes.
-
-        prior_mean[:] = waveletinverse(waveletx1)
-        prior_mean[:] = adjacentaverage(prior_mean)
-
-        #perform repeated, iterative smoothing and wavelet reconvolution.
-        #use savinsky-golay for ONLY top two wavelet transforms-
-        #preserve lower frequency data better.
-        #run one last cycle of averaging in the deconvoluted domain per iteration.
+        #how does this work? First we generated 6 successive discreet envelopes, each containing the 
+        #transformed energy from the previous first half of the wavelet(with differences halved and appended)
+        #then we smooth each of them and untransform it. 
+        #in higher order wavelets, signal energy is concentrated in a few data points with a much higher SNR.
+        #noise, on the other hand, remains evenly present and primarily in the highest wavelet, lower bounding
+        #is used to set values under X to zero, before recomposing the data.     
+        #32000 -> 16 
+        #16 -> 8
+        #4000
+        #2000
+        #1000
+        #500
+        #250
+        #125
+        #conversely, if i understand correctly, *most* of the coefficients of the highest order will contain
+        #most of the energy evenly split- that is to say, the white noise energy is evenly divided among all 12,000
+        #samples in the highest bound, while the few samples with a huge variance, in fact, contain all of the signal energy.
+        #finally, we apply one round of adjacent averaging of sample values.
+        #savitsky-golay advantages: preserves peak relationships
+        #disadvantages: significantly attenuates, doesn't reduce noise when signal isnt concentrated
+        #moving average advantages: insensitive to fluctuation
+        #disadvantage: damages signal peaks
+        
+        #so, we savitsky-golay the wavelets, then apply averaging to the overall.
+        
+        
+        
+        
 
         iterations = iterations +  1
 
@@ -614,7 +563,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
                             ((prior_mean[i] / prior_variance[i]) + (data[i] / data_variance[i])) * posterior_variance[i])
 
         # EVALUATE EVIDENCE
-        #fabada figure 6: probability distribution calculation	
+        #fabada figure 6: probability distribution calculation  
         for i in numba.prange(N):
                 ja1[i] = (prior_mean[i] - math.sqrt(data[i])) ** 2
                 ja2[i] = (2. * (prior_variance[i] + data_variance[i]))
@@ -684,8 +633,11 @@ class FilterRun(Thread):
         self.dtype = dtype
         self.buffer = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size * self.channels)])
         self.buffer2 = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size * self.channels)])
-        self.buffer2 = self.buffer.reshape(-1, self.channels)
+        self.buffer3 = numpy.ndarray(dtype=numpy.float64, shape=[int(self.processing_size * self.channels)])
+        self.buffer3.fill(0.0)#fill the initial array
         self.buffer = self.buffer.reshape(-1, self.channels)
+        self.buffer2 = self.buffer.reshape(-1, self.channels)
+        self.buffer3 = self.buffer.reshape(-1, self.channels)
         self.work = work
         self.time = time
         self.floor = floor
@@ -702,38 +654,45 @@ class FilterRun(Thread):
     def write_filtered_data(self):
 
         numpy.copyto(self.buffer, self.rb.read(self.processing_size).astype(dtype=numpy.float64))
-        #self.buffer contains (44100,2) of numpy.float32 audio values sampled with pyaudio
+        #self.buffer contains (16000,2) of numpy.float32 audio values sampled with pyaudio
         if self.enabled == False:
             self.processedrb.write(self.buffer.astype(dtype=self.dtype), error=True)
-            return
-
+            
         for i in range(self.channels):
 
             x = numpy.sign(self.last[i])
             fft = numpy.fft.rfft(self.buffer[:, i])
             zeros = numpy.zeros_like(fft)
             band = numpy.zeros_like(fft)
-            band[18:11025] = fft[18:11025]#use a wide passband but filter stuff that will confuse us
+            band[18:22050] = fft[18:22050]#use a wide passband but filter stuff that will confuse fabada
             bandz = numba_fabada(numpy.fft.irfft(band),480,self.iterationcontrol)
             band = numpy.fft.rfft(bandz)
-            zeros[18:11025] = band[18:11025]
+            zeros[18:22050] = band[18:22050]
             self.buffer2[:, i] = numpy.fft.irfft(zeros)
-
+            
+            self.buffer2[:, i] = round(self.buffer2[:, i],225)#
+            self.buffer2[31800:32000, i] = unround(self.buffer2[31800:32000, i],200)
+            #ATTEMPT crude filtering to reduce discrongruity at end of and start of frames.
             v = []
-            for b in range(14):
-                    v.append(numpy.sign(self.buffer2[47984 +b, i]) )#get the signs of the last 16 elements
-            v.append(numpy.sign(x)) #insert the last sign
-            for b in range(14):
+            for b in range(64):#counts from zero to 63
+                    v.append(numpy.sign(self.buffer2[-64+b, i]) )#get the signs of the last 64 elements
+            for b in range(64):#counts from zero to 63
+                    v.append(numpy.sign(self.buffer3[b, i]))#get the first(last in time) 64 signs of the previous array
+
+            for b in range(127):#counts from zero to 126, where 127 is the 128th element of the array
                     if (abs(v[b]) + abs(v[b+1])) == 2 and abs((v[b]) + (v[b+1])) != 2:#if -1 + -1 or 1 + 1, not a zero crossing
-                     #zero crossing detected!
-                        self.buffer2[47984 + b, i] = 0.0 #insert zero crossing fix
+                        if b > 64: #if this applies to buffer3
+                            self.buffer3[b-65, i] = 0.0 #insert zero crossing fix attempt
+                        else:
+                            self.buffer2[-63+b,i] = 0.0 #if i previous array, write it into the previous point
 
-            self.last[i] = self.buffer2[-1, i] #copy out last sign of previous array
-            self.buffer2[:, i] = round(self.buffer2[:, i],200)#
-            self.buffer2[47800:48000, i] = unround(self.buffer2[47800:48000, i],200)
-            #the rounding is necessary to prevent clicking
-
-        self.processedrb.write(self.buffer2.astype(dtype=self.dtype), error=True)
+            
+        
+        #if we're not skipping, write the buffer, otherwise don't
+        if self.enabled == True:
+            self.processedrb.write(self.buffer3.astype(dtype=self.dtype), error=True)
+        self.buffer3[:] = self.buffer2[:]
+         #copy the data from the current to the previous buffers always
 
     def run(self):
         while self.running:
@@ -773,7 +732,7 @@ class StreamSampler(object):
             pass
         return cls.dtype_to_paformat[dtype.name]
 
-    def __init__(self, sample_rate=48000, channels=2, buffer_delay=1.5,  # or 1.5, measured in seconds
+    def __init__(self, sample_rate=32000, channels=2, buffer_delay=1.5,  # or 1.5, measured in seconds
                  micindex=1, speakerindex=1, dtype=numpy.float32):
         self.pa = pyaudio.PyAudio()
         self._processing_size = sample_rate
