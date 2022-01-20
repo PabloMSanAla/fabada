@@ -124,12 +124,19 @@ def shift3dximg(arr: list[numpy.float32], num: int, fill_value: list[numpy.float
         result[:] = arr
     return result
 
-@numba.jit(numba.float64[:](numba.float64[:], numba.int32), nopython=True, parallel=True, nogil=True,cache=True)
-def round(data: list[float], num: int) -> list[float] :
-    X = num
-    for i in numba.prange(X):
-        data[i] = data[i] * (i / X)  # perform a linear fadein
+@numba.jit(numba.float64[:](numba.float64[:], numba.float64), nopython=True, parallel=True, nogil=True,cache=True)
+def smooth(data: list[float], num: float) -> list[float] :
+    for i in numba.prange(data.size):
+        data[i] = data[i] * (1 / (data.size - i)) + (num * (1 / i+1)) # perform a linear fadein
     return data
+    #what this function does is, it adds an increasingly smaller fraction and increasingly larger fraction of
+    #num to our value, such that the trend is away from that number.
+    #initially, we take, for example, 1/200th of our value and 1/1 of num
+    #at the end, for example, we take 199/200th of our value and 1/200th of our value
+    #or something like this..
+    #the goal of this function is to smooth the discongruities present
+    
+    
 
 @numba.jit(numba.float64[:](numba.float64[:], numba.int32), nopython=True, parallel=True, nogil=True,cache=True)
 def unround(data: list[float], num: int) -> list[float] :
@@ -283,7 +290,7 @@ def adjacentmeansquared(data):
 @numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
 def savgol(data: list[numpy.float64]):
 
-    coeff = numpy.asarray([-0.08571429,  0.34285714,  0.48571430,  0.34285714, -0.08571429])
+    coeff = numpy.asarray([-0.08571429,  0.34285714,  0.48571429,  0.34285714, -0.08571429])
     #pad_length = h * (width - 1) // 2# for width of 5, this defaults to 2...
     data_pad = numpy.zeros(data.size + 4)
     data_pad[2:data.size + 2] = data[0:data.size]#leaving two on each side
@@ -314,15 +321,15 @@ def savgol(data: list[numpy.float64]):
     z = numpy.zeros((data.size, 30))
 
     for i in numba.prange(data.size):
-        for n in numba.prange(30):
-            for k in numba.prange(5):
-                for gk in numba.prange(6):
-                    z[i,n] = coeff[gk] * x[i, k]
+        for n in numba.prange(4):
+            for k in numba.prange(6):
+                    z[i,1 + k * n + 1 ] = coeff[n] * x[i, k]
     
 
         #create the array of each set of averaging values
     for i in numba.prange(data.size):
-        new_data[i] = numpy.sum(z[i,:])
+        new_data[i] = numpy.sum(z[i,:])/6
+
     return new_data
 
 def chi2pdffullprecision(chi2_data):
@@ -508,10 +515,10 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
         
         
         for o in range(8):
-            wavelets[0:waveletperf,6-o] = savgol(wavelets[0:waveletperf,6-o])
-            wavelets[waveletperf:waveletsize,6-o] = savgol(wavelets[waveletperf:waveletsize,6-o])
+            wavelets[0:waveletperf,7-o] = savgol(wavelets[0:waveletperf,7-o])
+            wavelets[waveletperf:waveletsize,7-o] = savgol(wavelets[waveletperf:waveletsize,7-o])
             #for each wavelet we process, successively iterate over the first and second halves of it.
-            product[:] = waveletinverse(wavelets[:,6-o])
+            product[:] = waveletinverse(wavelets[:,7-o])
             wavelets[0:waveletperf,6-o] = product[0:waveletperf] #copy down the changes
         #now, we've iterated down to 0.
         
@@ -622,6 +629,14 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
     return data
 
+
+@numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
+def soften(data: list[float]) -> list[float]:
+    for i in numba.prange(data.size):
+        data[i] = data[i] * 1/ (data.size)#perform a linear fadein
+    return data
+    
+
 class FilterRun(Thread):
     def __init__(self, rb, pb, channels, processing_size, dtype,work,time,floor,run):
         super(FilterRun, self).__init__()
@@ -669,24 +684,15 @@ class FilterRun(Thread):
             band = numpy.fft.rfft(bandz)
             zeros[18:22050] = band[18:22050]
             self.buffer2[:, i] = numpy.fft.irfft(zeros)
+            zed = numpy.zeros((400))
+            zed[0:199] = self.buffer3[-200:-1,i].copy()
+            zed[200:400] = self.buffer2[0:200,i].copy()
+            zed = savgol(zed)
+            zed[::-1] = savgol(zed[::-1])
+            self.buffer3[-200:-1,i] = zed[0:199]
+            self.buffer2[0:200,i] = zed[200:400]
             
-            self.buffer2[:, i] = round(self.buffer2[:, i],225)#
-            self.buffer2[31800:32000, i] = unround(self.buffer2[31800:32000, i],200)
-            #ATTEMPT crude filtering to reduce discrongruity at end of and start of frames.
-            v = []
-            for b in range(64):#counts from zero to 63
-                    v.append(numpy.sign(self.buffer2[-64+b, i]) )#get the signs of the last 64 elements
-            for b in range(64):#counts from zero to 63
-                    v.append(numpy.sign(self.buffer3[b, i]))#get the first(last in time) 64 signs of the previous array
 
-            for b in range(127):#counts from zero to 126, where 127 is the 128th element of the array
-                    if (abs(v[b]) + abs(v[b+1])) == 2 and abs((v[b]) + (v[b+1])) != 2:#if -1 + -1 or 1 + 1, not a zero crossing
-                        if b > 64: #if this applies to buffer3
-                            self.buffer3[b-65, i] = 0.0 #insert zero crossing fix attempt
-                        else:
-                            self.buffer2[-63+b,i] = 0.0 #if i previous array, write it into the previous point
-
-            
         
         #if we're not skipping, write the buffer, otherwise don't
         if self.enabled == True:
