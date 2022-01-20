@@ -219,6 +219,9 @@ def adjacentaverage(data):
 
 
     return returndata
+    
+    
+
 
 #median filter
 @numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
@@ -246,30 +249,59 @@ def medianfilter(data):
 
     return returndata2
 
-
-
-#5th order autoregressive rolling mean
-@numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
-def arma(data):
+#@numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
+def regressive_average(data):
 
     y = numpy.zeros_like(data)
+    data_pad = numpy.zeros((data.size + 5))
+    firstval = 2* data[0] - data[4:0:-1]
+    data_pad[0:4] = firstval[:]
+    data_pad[5:data.size] = data[0:data.size]
     x = numpy.zeros((data.size, 6))  # create array for outputs
+    for i in numba.prange(data.size+5):
+        x[i , 0] = data_pad[max(0,i -5)] * 0.2
+        x[i , 1] = data_pad[max(0,i -4)] * 0.2
+        x[i , 2] = data_pad[max(0,i -3)] * 0.2
+        x[i , 3] = data_pad[max(0,i -2)] * 0.2
+        x[i , 4] = data_pad[max(0,i -1)] * 0.2
+        x[i , 5] = data_pad[i]
+
+
     for i in numba.prange(data.size):
-        x[i , 0] = data[max(0,i -5)] * 0.2
-        x[i , 1] = data[max(0,i -4)] * 0.2
-        x[i , 2] = data[max(0,i -3)] * 0.2
-        x[i , 3] = data[max(0,i -2)] * 0.2
-        x[i , 4] = data[max(0,i -1)] * 0.2
-        x[i , 5] = data[i]
-
-    y[0] = x[0,5]#pad first value
-
-
-    for i in numba.prange(data.size -1):
-        y[i+1] = numpy.sum(x[i,:])/2
+        y[i] = numpy.sum(x[i,:])/2
 
     return y
+    
 
+#@numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
+def rolling_average(data):
+
+    y = numpy.zeros_like(data)
+    data_pad = numpy.zeros(data.size + 5)
+    data_pad[0:data.size] = data[0:data.size]
+    lastvals = 2* data[-1] - data[-1:-5:-1]
+    data_pad[-5:-1] = lastvals[:]
+
+    x = numpy.zeros((data.size, 6))  # create array for outputs
+    for i in numba.prange(data.size):
+        x[i , 0] = data_pad[i +5] * 0.2
+        x[i , 1] = data_pad[i +4] * 0.2
+        x[i , 2] = data_pad[i +3] * 0.2
+        x[i , 3] = data_pad[i +2] * 0.2
+        x[i , 4] = data_pad[i +1] * 0.2
+        x[i , 5] = data_pad[i]
+
+
+    for i in numba.prange(data.size):
+        y[i] = numpy.sum(x[i,:])/2
+
+        return y
+
+@numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
+def movingaverage(data):
+        return np.convolve(data, np.ones(5)/5, mode='valid')
+
+        
 
 
 @numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
@@ -284,8 +316,61 @@ def adjacentmeansquared(data):
         returndata[i-1] = math.sqrt((data_pad[i-1]**2 + data_pad[i]**2 + data_pad[i+1]**2)/3)
     return returndata
 
+    
+    
+
+@numba.jit
+def numba_convolve_mode_valid(arr, kernel):
+    n = kernel.size
+    return numpy.convolve(arr, kernel)[n-1:1-n]
+
+#https://github.com/numba/numba/issues/4119
+@numba.jit(numba.float64[:](numba.float64[:],numba.float64[:]),parallel=True,nogil=True,cache=True)
+def numba_convolve_mode_valid_as_loop(arr, kernel):
+    m = arr.size
+    n = kernel.size
+    out_size = m - n + 1
+    out = numpy.empty(out_size, dtype=numpy.float64)
+    for i in numba.prange(out_size):
+        out[i] = numpy.dot(arr[i:i + n], kernel)
+    return out
+
+#@numpy.jit()
+#def numpy_convolve_mode_valid(arr, kernel):
+   # return np.convolve(arr, kernel, mode='valid')
 
 
+
+@numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
+def moving_average(data: list[numpy.float64]):
+
+    coeff = numpy.asarray([0.2,0.2,0.2,0.2,0.2])
+    #pad_length = h * (width - 1) // 2# for width of 5, this defaults to 2...
+    data_pad = numpy.zeros(data.size + 4)
+    data_pad[2:data.size + 2] = data[0:data.size]#leaving two on each side
+    firstval =  2* data[0] - data[2:0:-1]
+    lastvals = 2* data[-1] - data[-1:-3:-1]
+    data_pad[0] = firstval[0]
+    data_pad[1] = firstval[1]
+    data_pad[-1] = lastvals[1] 
+    data_pad[-2] = lastvals[0]
+    new_data = numpy.zeros((data.size))
+   
+    #
+    #multiply vec2 by vec1[0] = 2    4   6
+    #multiply vec2 by vec1[1] = -    3   6   9
+    #multiply vec2 by vec1[2] = -    -   4   8   12
+    #-----------------------------------------------
+    #add the above three      = 2    7   16  17  12 
+
+
+    new_data[:] = numba_convolve_mode_valid_as_loop(data_pad[:],coeff[:])
+
+        #create the array of each set of averaging values
+
+    return new_data
+    
+    
 #5 width
 @numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
 def savgol(data: list[numpy.float64]):
@@ -300,16 +385,7 @@ def savgol(data: list[numpy.float64]):
     data_pad[1] = firstval[1]
     data_pad[-1] = lastvals[1] 
     data_pad[-2] = lastvals[0]
-    new_data = numpy.zeros(data.size)
-    x = numpy.zeros(((data.size-2),6)) #create array for outputs
-    for i in numba.prange(2, data.size):
-        x[ i - 2,0] =  data_pad[i - 2]
-        x[ i - 2,1] =  data_pad[i - 1]
-        x[ i - 2,2] =  data_pad[i]
-        x[i - 2,3] =  data_pad[i + 1]
-        x[i - 2,4] =  data_pad[i + 2]
-        x[i - 2,5]=  data_pad[i + 3]
-
+    new_data = numpy.zeros((data.size))
    
     #
     #multiply vec2 by vec1[0] = 2    4   6
@@ -318,17 +394,10 @@ def savgol(data: list[numpy.float64]):
     #-----------------------------------------------
     #add the above three      = 2    7   16  17  12 
 
-    z = numpy.zeros((data.size, 30))
 
-    for i in numba.prange(data.size):
-        for n in numba.prange(4):
-            for k in numba.prange(6):
-                    z[i,1 + k * n + 1 ] = coeff[n] * x[i, k]
-    
+    new_data[:] = numba_convolve_mode_valid_as_loop(data_pad[:],coeff[:])
 
         #create the array of each set of averaging values
-    for i in numba.prange(data.size):
-        new_data[i] = numpy.sum(z[i,:])/6
 
     return new_data
 
@@ -350,8 +419,24 @@ def chi2pdffullprecision(chi2_data):
     #this code can be used with an objmode lift to calculate the chi2pdf for large or small values.
     #however, it will still return 0.0 if the value is smaller than 53 points of precision,
     #and will still return InF if the value is over 19 0s in length
+    
+    
+@numba.jit(numba.float64[:](numba.float64[:],numba.int32), nopython=True, parallel=True, nogil=True,cache=True)
+def nn_garrote(data,x):
+    """Non-negative Garrote."""
+    data = numpy.asarray(data)
+    magnitude = numpy.absolute(data)
+    value = numpy.amax(data[0:x]) #we are lizards and we eat faces, so
 
 
+    thresholded = (1 - value**2/magnitude**2)
+    thresholded.clip(min=0, max=None, out=thresholded)
+    thresholded = data * thresholded
+
+    return thresholded
+
+        
+        
 @numba.jit( numba.float64[:](numba.float64[:], numba.float64, numba.int32), nopython=True, parallel=True, nogil=True,cache=True)
 def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) -> ( list[numpy.float64]):
     # notes:
@@ -430,7 +515,7 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
     #achieve 6th order wavelet decomposition from input datum.
 
-    data_beta = adjacentaverage(data)
+    data_beta = savgol(data)
     # get an array filled with the mean
     x9 = numpy.mean(data_beta)
     data_mean_beta = numpy.full((data_beta.size), x9)
@@ -489,67 +574,34 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
     chi2_data_min = numpy.sum(ja1)
     hasrun = False
-    
-    
-    
     waveletsize = wavelets[:,0].size
     waveletperf = waveletsize//2
-    process = numpy.zeros((waveletperf))        
+     
     product = numpy.zeros((waveletsize))
+    
+    for o in range(8):
+            wavelets[0:waveletperf,7-o] = nn_garrote(wavelets[0:waveletperf,7-o],(8-o) * 1000)
+            wavelets[waveletperf:waveletsize,7-o] = nn_garrote(wavelets[waveletperf:waveletsize,7-o],(8-o) * 1000)
+            #for each wavelet we process, successively iterate over the first and second halves of it.
+            product[:] = waveletinverse(wavelets[:,7-o])
+            wavelets[0:waveletperf,6-o] = product[0:waveletperf] #copy down the changes
+            
+    prior_mean[:] = waveletinverse(wavelets[:,0])
+
+    
+
     while 1:
 
         # GENERATES PRIORS
         
-        if hasrun == True:
-            wavelets[:,0] = wavelet(posterior_mean)
-            wavelets[:,1]  = waveletnth(wavelets[:,0])
-            wavelets[:,2]  = waveletnth(wavelets[:,1])
-            wavelets[:,3]  = waveletnth(wavelets[:,2])
-            wavelets[:,4]  = waveletnth(wavelets[:,3])
-            wavelets[:,5]  = waveletnth(wavelets[:,4])
-            wavelets[:,6]  = waveletnth(wavelets[:,5])
-            wavelets[:,7]  = waveletnth(wavelets[:,6])
-            #recreate our envelopes on successive runs
         hasrun = True #enable our successive run mechanism after the first iteration
         
         
         
-        for o in range(8):
-            wavelets[0:waveletperf,7-o] = savgol(wavelets[0:waveletperf,7-o])
-            wavelets[waveletperf:waveletsize,7-o] = savgol(wavelets[waveletperf:waveletsize,7-o])
-            #for each wavelet we process, successively iterate over the first and second halves of it.
-            product[:] = waveletinverse(wavelets[:,7-o])
-            wavelets[0:waveletperf,6-o] = product[0:waveletperf] #copy down the changes
         #now, we've iterated down to 0.
         
-        prior_mean[:] = waveletinverse(wavelets[:,0])
-        prior_mean[:] = adjacentaverage(prior_mean[:])
+        prior_mean[:] = savgol(regressive_average((prior_mean[:])))
 
-        #we now have noise smoothed wavelet transforms for 1-6 HAAR envelopes.
-        #how does this work? First we generated 6 successive discreet envelopes, each containing the 
-        #transformed energy from the previous first half of the wavelet(with differences halved and appended)
-        #then we smooth each of them and untransform it. 
-        #in higher order wavelets, signal energy is concentrated in a few data points with a much higher SNR.
-        #noise, on the other hand, remains evenly present and primarily in the highest wavelet, lower bounding
-        #is used to set values under X to zero, before recomposing the data.     
-        #32000 -> 16 
-        #16 -> 8
-        #4000
-        #2000
-        #1000
-        #500
-        #250
-        #125
-        #conversely, if i understand correctly, *most* of the coefficients of the highest order will contain
-        #most of the energy evenly split- that is to say, the white noise energy is evenly divided among all 12,000
-        #samples in the highest bound, while the few samples with a huge variance, in fact, contain all of the signal energy.
-        #finally, we apply one round of adjacent averaging of sample values.
-        #savitsky-golay advantages: preserves peak relationships
-        #disadvantages: significantly attenuates, doesn't reduce noise when signal isnt concentrated
-        #moving average advantages: insensitive to fluctuation
-        #disadvantage: damages signal peaks
-        
-        #so, we savitsky-golay the wavelets, then apply averaging to the overall.
         
         
         
@@ -632,9 +684,10 @@ def numba_fabada(data: list[numpy.float64], timex: float,iterationcontrol: int) 
 
 @numba.jit(numba.float64[:](numba.float64[:]), nopython=True, parallel=True, nogil=True,cache=True)
 def soften(data: list[float]) -> list[float]:
+    data2 = data[::-1]
     for i in numba.prange(data.size):
-        data[i] = data[i] * 1/ (data.size)#perform a linear fadein
-    return data
+        data2[i] = data2[i] /  float(i) #perform a linear fadein
+    return data2[::-1]
     
 
 class FilterRun(Thread):
@@ -661,6 +714,7 @@ class FilterRun(Thread):
         self.noverlap=446
         self.last = [0.,0.]
         self.iterationcontrol = 64
+        
 
 
 
@@ -684,13 +738,24 @@ class FilterRun(Thread):
             band = numpy.fft.rfft(bandz)
             zeros[18:22050] = band[18:22050]
             self.buffer2[:, i] = numpy.fft.irfft(zeros)
+            x = self.buffer2[:, i] 
+            y = self.buffer[:, i] 
+            x[y == 0] = 0.0 #don't return information if information was not provided
+            self.buffer2[:, i] = x#this operation might be redundant
+            
+            xed = numpy.mean(self.buffer3[-10:-1,i])
+            xes = numpy.mean(self.buffer2[0:10,i])
+            xer = (xed + xes)/2 #get the average
             zed = numpy.zeros((400))
+            self.buffer3[-2:-1,i] = xer
+            self.buffer2[0:2,i] = xer
             zed[0:199] = self.buffer3[-200:-1,i].copy()
             zed[200:400] = self.buffer2[0:200,i].copy()
             zed = savgol(zed)
-            zed[::-1] = savgol(zed[::-1])
             self.buffer3[-200:-1,i] = zed[0:199]
             self.buffer2[0:200,i] = zed[200:400]
+            self.buffer2[0:16, i] = soften(self.buffer2[0:16, i])
+            self.buffer3[-1:-16, i] = soften(self.buffer3[-1:-16, i])
             
 
         
