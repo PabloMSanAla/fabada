@@ -20,7 +20,7 @@
   <p align="center">
     FABADA is a novel non-parametric noise reduction technique which arise from the point of view of Bayesian inference that iteratively evaluates possible smoothed models of the data, obtaining an estimation of the underlying signal that is statistically compatible with the noisy measurements.
     Iterations stop based on the evidence $E$ and the $\chi^2$ statistic of the last smooth model, and we compute the expected value of the signal as a weighted average of the smooth models.
-    You can find the entire paper describing the new method in (link will be available soon).
+    You can find the entire paper describing the new method in <a href="https://arxiv.org/abs/2201.05145">Sánchez-Alarcón, P & Ascasibar, Y. 2022</a> .
     <br />
     <a href="https://github.com/PabloMSanAla/fabada"><strong>Explore the docs »</strong></a>
     <br />
@@ -64,7 +64,7 @@
 <!-- [![Product Name Screen Shot][product-screenshot]](https://example.com) -->
 
 This automatic method is focused in astronomical data, such as images (2D) or spectra (1D). Although, this doesn't mean it can be treat like a general noise reduction algorithm and can be use in any kind of two and one-dimensional data reproducing reliable results.
-The only requisite of the input data is an estimation of its variance.
+The only requisite of the input data is an estimation of its associated variance.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -72,7 +72,7 @@ The only requisite of the input data is an estimation of its variance.
 
 ## Getting Started
 
-We try to make the usage of FABADA as simple as possible. For that purpose, we have create a PyPI and Conda package to install FABADA in its latest version.
+We try to make the usage of FABADA as simple as possible. For that purpose, we have create a PyPI package to install FABADA.
 
 ### Prerequisites
 
@@ -84,15 +84,20 @@ Although PyPI install the prerequisites itself, FABADA has two dependecies.
 
 ### Installation
 
-To install fabada we can, use the Python Package Index (PyPI) or Conda.
-
-Using pip
+Using pip you can either install the last [relase](https://github.com/PabloMSanAla/fabada/releases) by
 
 ```sh
   pip install fabada
 ```
 
-we are currently working on uploading the package to the Conda system.
+or you can install the latest version of the code as 
+
+```sh
+  git clone git@github.com:PabloMSanAla/fabada.git
+  cd fabada
+  pip install -e .
+```
+
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 

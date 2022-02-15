@@ -31,12 +31,31 @@ def fabada(
 
     """
         FABADA for any kind of data (1D or 2D). Performs noise reduction in input.
-        :param data: Noisy measurements, either 1 dimension (M) or 2 dimensions (MxN)
-        :param data_variance: Estimated variance of the input, either MxN array, list
+
+        FABADA is a non-parametric noise reduction technique based on Bayesian
+        inference that iteratively evaluates possibles smoothed  models  of  
+        the  data introduced,  obtaining  an  estimation  of the  underlying  
+        signal that is statistically  compatible  with the  noisy  measurements.
+
+        based on Sanchez-Alarcon, P.M. & Ascasibar, Y.  2022
+        "Fully Adaptive Bayesian Algorithm for Data Analysis. FABADA"
+        arXiv:2201.05145
+
+        Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+        Everyone is permitted to copy and distribute verbatim copies
+        of this license document, but changing it is not allowed.
+
+    :param data: Noisy measurements, either 1 dimension (M) or 2 dimensions (MxN)
+
+    :param data_variance: Estimated variance of the input, either MxN array, list
                           or float assuming all point have same variance.
+
     :param max_iter: 3000 (default). Maximum of iterations to converge in solution.
+
     :param verbose: False (default) or True. Spits some informations about process.
-        :param **kwargs: Future Work.
+
+    :param **kwargs: Future Work.
+
     :return bayes: denoised estimation of the data with same size as input.
     """
 
@@ -68,11 +87,17 @@ def fabada(
     chi2_pdf_derivative, chi2_data_min = 0, data.size
     bayesian_weight = 0
     bayesian_model = 0
+    evidence_previous = np.mean(evidence)
 
     converged = False
 
     try:
         while not converged:
+            
+            if verbose:
+                print('\rIteration = %5d ;'%iteration +
+                    '<E> = %4.2f ; '% evidence_previous +
+                    'Chi^2 = %3.4e/%3.3e '%(chi2_data,data.size),end='')
 
             chi2_pdf_previous = chi2_pdf
             chi2_pdf_derivative_previous = chi2_pdf_derivative
@@ -84,7 +109,7 @@ def fabada(
             prior_mean = running_mean(posterior_mean)
             prior_variance = posterior_variance
 
-            # APPLIY BAYES' THEOREM
+            # APPLY BAYES' THEOREM
             posterior_variance = 1 / (1 / prior_variance + 1 / data_variance)
             posterior_mean = (
                 prior_mean / prior_variance + data / data_variance
@@ -129,8 +154,11 @@ def fabada(
     bayes = bayesian_model / bayesian_weight
 
     if verbose:
+        print('\rIteration = %5d ;'%iteration +
+                    '<E> = %4.2f ; '% np.mean(evidence) +
+                    'Chi^2 = %3.4e/%3.3e '%(chi2_data,data.size),end='')
         print(
-            "Finish at {} iterations".format(iteration),
+            "\nFinish at {} iterations".format(iteration),
             " and with an execute time of {:3.2f} seconds.".format(time() - t),
         )
 
