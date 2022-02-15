@@ -22,10 +22,10 @@
     Iterations stop based on the evidence $E$ and the $\chi^2$ statistic of the last smooth model, and we compute the expected value of the signal as a weighted average of the smooth models.
     You can find the entire paper describing the new method in <a href="https://arxiv.org/abs/2201.05145">Sánchez-Alarcón, P & Ascasibar, Y. 2022</a>.
     <br />
-    <a href="https://github.com/PabloMSanAla/fabada"><strong>Explore the docs »</strong></a>
+    <a href="https://colab.research.google.com/github/PabloMSanAla/fabada/blob/master/Results/show_results.ipynb#scrollTo=o1iHY5aE5O2o"><strong>Explore the results »</strong></a>
     <br />
     <br />
-    <a href="https://github.com/PabloMSanAla/fabada">View Demo</a>
+    <a href="https://github.com/PabloMSanAla/fabada#usage">View Demo</a>
     ·
     <a href="https://github.com/PabloMSanAla/fabada/issues">Report Bug</a>
     ·
