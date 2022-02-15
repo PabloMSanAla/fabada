@@ -20,9 +20,7 @@
   <p align="center">
     FABADA is a novel non-parametric noise reduction technique which arise from the point of view of Bayesian inference that iteratively evaluates possible smoothed models of the data, obtaining an estimation of the underlying signal that is statistically compatible with the noisy measurements.
     Iterations stop based on the evidence $E$ and the $\chi^2$ statistic of the last smooth model, and we compute the expected value of the signal as a weighted average of the smooth models.
-    You can find the entire paper describing the new method in <a href="https://arxiv.org/abs/2201.05145">Sánchez-Alarcón, P & Ascasibar, Y. 2022</a> .
-
-
+    You can find the entire paper describing the new method in <a href="https://arxiv.org/abs/2201.05145">Sánchez-Alarcón, P & Ascasibar, Y. 2022</a>.
     <br />
     <a href="https://github.com/PabloMSanAla/fabada"><strong>Explore the docs »</strong></a>
     <br />
