@@ -120,7 +120,9 @@ In this example you will use fabada to denoise a [SDSS](https://www.sdss.org/) m
     python fabadaCMD.py ngc2870_sloan_r.fits ngc2870_sloan_r_noise.fits
 ```
 
-and the result will be saved in a fits file.
+and the result will be saved in a fits file called in this case ngc2870_sloan_r_fabada.fits. The next figure shows the differences between the two images:
+
+![Fabada in astronomy][[astronomy_results]]
 
 If you want to see the other optional parameters you only have to run
 
@@ -323,3 +325,4 @@ Readme file taken from [Best README Template](https://github.com/othneildrew/Bes
 [linkedin-url]: https://linkedin.com/in/linkedin_username
 [image_results]: src/images/bubble_fabada_24.63dB.jpg
 [spectra_results]: src/images/arp256_fabada_28.22dB.jpg
+[astronomy_results]: src/images/SDSS_example.jpg
