@@ -6,7 +6,7 @@ setup(
     name="fabada",
     version='0.1',
     description='Fully Adaptive Bayesian Algorithm for Data Analysis FABADA',
-    long_description='FABADA is a novel non-parametric noise reduction technique which arise from the point of view of Bayesian inference that iteratively evaluates possible smoothed models of the data, obtaining an estimation of the underlying signal that is statistically compatible with the noisy measurements. Iterations stop based on the evidence $E$ and the $\chi^2$ statistic of the last smooth model, and we compute the expected value of the signal as a weighted average of the smooth models.\nYou can find the entire paper describing the new procces in (introduce link to arxiv).',
+    long_description='FABADA is a novel non-parametric noise reduction technique which arise from the point of view of Bayesian inference that iteratively evaluates possible smoothed models of the data, obtaining an estimation of the underlying signal that is statistically compatible with the noisy measurements. Iterations stop based on the evidence $E$ and the $\chi^2$ statistic of the last smooth model, and we compute the expected value of the signal as a weighted average of the smooth models.\nYou can find the entire paper describing the new procces in Sánchez-Alarcón, P & Ascasibar,Y. 2022.',
     long_description_content_type="text/markdown",
     include_package_data=True,
     author='Pablo M. Sánchez Alarcón',
