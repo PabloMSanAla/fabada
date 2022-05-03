@@ -58,9 +58,13 @@ def fabada(
 
     :return bayes: denoised estimation of the data with same size as input.
     """
+    
 
     data = np.array(data / 1.0)
     data_variance = np.array(data_variance / 1.0)
+
+    data[np.where(np.isnan(data))] = 0
+
 
     if not kwargs:
         kwargs = {}
@@ -76,6 +80,7 @@ def fabada(
 
     if data_variance.size != data.size:
         data_variance = data_variance * np.ones_like(data)
+        data_variance[np.where(np.isnan(data))] = 1e-15
 
     # INITIALIZING ALGORITMH ITERATION ZERO
     t = time()
@@ -154,7 +159,7 @@ def fabada(
     bayes = bayesian_model / bayesian_weight
 
     if verbose:
-        print('\rIteration = %5d ;'%iteration +
+        print('\rIteration = %5d ; '%iteration +
                     '<E> = %4.2f ; '% np.mean(evidence) +
                     'Chi^2 = %3.4e/%3.3e '%(chi2_data,data.size),end='')
         print(

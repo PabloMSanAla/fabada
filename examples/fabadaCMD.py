@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/Users/pmsa/opt/anaconda3/bin/python
 # -*- coding: utf-8 -*-
 
 """
@@ -12,6 +12,8 @@ Sanchez-Alarcon, P.M. and  Ascasibar, Y. 2022.
 from fabada import fabada
 import argparse
 from astropy.io import fits
+import os
+import numpy as np
 
 
 def make_parser():
@@ -23,7 +25,7 @@ def make_parser():
     )
 
     parser.add_argument(
-        "noise", help="Variance estimation of the image (float or string)"
+        "noise", help="Standard deviation estimation of the image (float or string)"
     )
 
     parser.add_argument(
@@ -70,8 +72,8 @@ def make_parser():
 p = make_parser().parse_args()
 
 extension = p.filename.split(".")[-1]
-name = p.filename[: -len(extension) - 1].split("/")[-1]
-path = p.filename[: -len(extension) - len(name) - 1]
+name = os.path.basename(os.path.splitext(p.filename)[0])
+path = os.path.dirname(p.filename)
 
 if p.verbose:
     print("Starting smoothing with fabada in %s image..." % (name + "." + extension))
@@ -90,11 +92,16 @@ except:
     noise = fits.open(p.noise)[p.noise_hdu].data
 
 
+if np.isnan(image).any():
+        nan_mask = np.where(np.isnan(image))
+        image[nan_mask]=0
+        noise[nan_mask]=1e-10
+
 # Run fabada
 
-fabada_estimation = fabada(image, noise, max_iter=p.iter, verbose=p.verbose)
+fabada_estimation = fabada(image, noise**2, max_iter=p.iter, verbose=p.verbose)
 
-
+fabada_estimation[nan_mask] = np.nan
 # Save results
 
 if not p.out:
