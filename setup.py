@@ -12,7 +12,7 @@ setup(
     author='Pablo M. Sánchez Alarcón',
     author_email='pablom.sanala@gmail.com',
     url = 'https://github.com/PabloMSanAla/fabada',
-    download_url='https://github.com/PabloMSanAla/fabada/archive/refs/tags/v_01.tar.gz',
+    download_url='https://github.com/PabloMSanAla/fabada/archive/refs/tags/v0.2.tar.gz',
     packages=['fabada'],
     python_requires='>=3.5',
     keywords=['Astronomy','Image Denoising','Bayesian'],
