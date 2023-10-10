@@ -258,7 +258,7 @@ Distributed under the GNU General Public License. See [`LICENSE.txt`](https://gi
 
 ## Contact
 
-Pablo M Sánchez Alarcón - pablom.sanala@gmail.com
+Pablo M Sánchez Alarcón - pmsa.astro@gmail.com
 
 Yago Ascasibar Sequeiros - yago.ascasibar@uam.es
 
