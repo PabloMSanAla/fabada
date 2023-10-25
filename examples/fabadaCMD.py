@@ -91,9 +91,8 @@ except:
     noise = str(p.noise)
     noise = fits.open(p.noise)[p.noise_hdu].data
 
-
-if np.isnan(image).any():
-        nan_mask = np.where(np.isnan(image))
+nan_mask = np.isnan(image)
+if nan_mask.any():
         image[nan_mask]=0
         noise[nan_mask]=1e-10
 
@@ -101,7 +100,7 @@ if np.isnan(image).any():
 
 fabada_estimation = fabada(image, noise**2, max_iter=p.iter, verbose=p.verbose)
 
-fabada_estimation[nan_mask] = np.nan
+if nan_mask.any(): fabada_estimation[nan_mask] = np.nan
 # Save results
 
 if not p.out:
