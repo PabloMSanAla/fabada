@@ -102,6 +102,7 @@ def show_results(y, z, y_recover, save_fig=True):
         )
 
     plt.show()
+    plt.pause(10)
 
 
 if __name__ == "__main__":
