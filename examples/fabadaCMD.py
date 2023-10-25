@@ -5,7 +5,7 @@
 
 FABADA script for denoising fits files from the command line 
 
-Sanchez-Alarcon, P.M. and  Ascasibar, Y. 2022.
+Sanchez-Alarcon, P.M. and  Ascasibar, Y. 2023.
 "Fully Adaptive Bayesian Algorithm for Data Analysis. FABADA"
 
 """
