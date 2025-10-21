@@ -60,8 +60,8 @@ def fabada(
     """
     
 
-    data = np.array(data / 1.0)
-    data_variance = np.array(data_variance / 1.0)
+    data = np.array(data)/ 1.0
+    data_variance = np.array(data_variance)/ 1.0
 
     data[np.where(np.isnan(data))] = 0
 
