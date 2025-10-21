@@ -1,0 +1,257 @@
+name: FABADA Tests
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main, develop ]
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        exclude:
+          # Exclude some combinations to reduce CI time
+          - os: windows-latest
+            python-version: '3.8'
+          - os: macos-latest
+            python-version: '3.8'
+
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/setup.py') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install system dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov pytest-xdist
+        pip install pandas
+        
+    - name: Install optional dependencies
+      continue-on-error: true
+      run: |
+        pip install opencv-python-headless scikit-image matplotlib
+        
+    - name: Run smoke tests
+      run: |
+        python tests/test_smoke.py
+        
+    - name: Run core tests with pytest
+      run: |
+        pytest tests/test_smoke.py -v --tb=short
+        pytest tests/test_spectrum.py -v --tb=short
+        pytest tests/test_integration.py::TestFabadaIntegration::test_spectrum_example_workflow -v --tb=short
+        pytest tests/test_integration.py::TestFabadaIntegration::test_multiple_noise_levels_consistency -v --tb=short
+        
+    - name: Run optional image tests (if OpenCV available)
+      continue-on-error: true
+      run: |
+        pytest tests/test_image.py::TestImageDenoising::test_fabada_image_basic -v --tb=short || echo "Image tests skipped - OpenCV not available"
+        
+    - name: Run integration tests
+      run: |
+        pytest tests/test_integration.py -k "not image" -v --tb=short
+
+  test-coverage:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov pandas
+        pip install opencv-python-headless scikit-image matplotlib
+        
+    - name: Run tests with coverage
+      run: |
+        pytest tests/ --cov=fabada --cov-report=xml --cov-report=html --cov-report=term -v
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  test-examples:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pandas matplotlib opencv-python-headless scikit-image
+        
+    - name: Test example scripts execution
+      run: |
+        cd examples
+        python -c "
+        import sys, os
+        sys.path.insert(0, '..')
+        
+        # Test spectrum example (without plotting)
+        exec(open('fabada_demo_spectrum.py').read().replace('plt.show()', 'pass'))
+        print('✓ Spectrum example executed successfully')
+        
+        # Test basic imports and execution of image example
+        import numpy as np
+        import cv2
+        from fabada import fabada
+        
+        # Load and test image processing
+        y = cv2.imread('bubble.png', 0)
+        if y is not None:
+            np.random.seed(12431)
+            sig = 15
+            noise = np.random.normal(0, sig, y.shape)
+            z = y + noise
+            y_recover = fabada(z, sig**2)
+            print('✓ Image example executed successfully')
+        else:
+            print('⚠ Image example skipped - bubble.png not found')
+        "
+
+  test-minimal:
+    # Test with minimal dependencies (only numpy, scipy)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+        
+    - name: Install minimal dependencies only
+      run: |
+        python -m pip install --upgrade pip
+        pip install numpy scipy pytest
+        
+    - name: Test FABADA core functionality
+      run: |
+        python -c "
+        import numpy as np
+        import sys, os
+        sys.path.insert(0, '.')
+        
+        from fabada import fabada, PSNR
+        
+        # Test basic functionality
+        x = np.linspace(0, 4*np.pi, 100)
+        y_true = np.sin(x)
+        y_true = (y_true - y_true.min()) / (y_true.max() - y_true.min()) * 255
+        
+        np.random.seed(42)
+        noise = np.random.normal(0, 10, y_true.shape)
+        y_noisy = y_true + noise
+        
+        y_recovered = fabada(y_noisy, 100)
+        
+        psnr_before = PSNR(y_noisy, y_true, L=255)
+        psnr_after = PSNR(y_recovered, y_true, L=255)
+        
+        assert psnr_after > psnr_before, f'FABADA should improve PSNR: {psnr_before:.2f} -> {psnr_after:.2f}'
+        print(f'✓ FABADA minimal test passed: PSNR improved from {psnr_before:.2f} to {psnr_after:.2f} dB')
+        "
+
+  test-performance:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pandas pytest
+        
+    - name: Performance benchmark tests
+      run: |
+        python -c "
+        import time
+        import numpy as np
+        import pandas as pd
+        import sys, os
+        sys.path.insert(0, '.')
+        
+        from fabada import fabada, PSNR
+        
+        # Load example data
+        if os.path.exists('examples/arp256.csv'):
+            y = np.array(pd.read_csv('examples/arp256.csv').flux)[100:1530]
+            y = (y / y.max()) * 255
+            
+            # Add noise
+            np.random.seed(12431)
+            sig = 10
+            noise = np.random.normal(0, sig, y.shape)
+            z = y + noise
+            
+            # Benchmark FABADA execution time
+            start_time = time.time()
+            y_recover = fabada(z, sig**2, max_iter=1000)
+            execution_time = time.time() - start_time
+            
+            # Validate results
+            psnr_before = PSNR(z, y, L=255)
+            psnr_after = PSNR(y_recover, y, L=255)
+            improvement = psnr_after - psnr_before
+            
+            print(f'Performance Results:')
+            print(f'  Data size: {y.shape}')
+            print(f'  Execution time: {execution_time:.2f} seconds')
+            print(f'  PSNR improvement: {improvement:.2f} dB')
+            print(f'  Speed: {y.shape[0] / execution_time:.1f} samples/second')
+            
+            # Performance assertions
+            assert execution_time < 120, f'Execution too slow: {execution_time:.2f}s > 120s'
+            assert improvement > 2.0, f'Insufficient improvement: {improvement:.2f} dB'
+            
+            print('✓ Performance test passed')
+        else:
+            print('⚠ Performance test skipped - arp256.csv not found')
+        "

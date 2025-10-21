@@ -17,6 +17,10 @@ setup(
     python_requires='>=3.5',
     keywords=['Astronomy','Image Denoising','Bayesian'],
     install_requires=['numpy', 'scipy'],
+    extras_require={
+        'test': ['pytest>=6.0', 'pandas', 'opencv-python', 'scikit-image'],
+        'examples': ['pandas', 'matplotlib', 'opencv-python', 'scikit-image'],
+    },
     classifiers=[
         'Development Status :: 3 - Alpha',
         'License :: Free for non-commercial use',

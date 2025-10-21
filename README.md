@@ -6,6 +6,8 @@
 [![Issues][issues-shield]][issues-url]
 [![GNU License][license-shield]][license-url]
 [![LinkedIn][linkedin-shield]][linkedin-url]
+[![Tests](https://github.com/PabloMSanAla/fabada/actions/workflows/test.yml/badge.svg)](https://github.com/PabloMSanAla/fabada/actions/workflows/test.yml)
+[![Quick Tests](https://github.com/PabloMSanAla/fabada/actions/workflows/quick-test.yml/badge.svg)](https://github.com/PabloMSanAla/fabada/actions/workflows/quick-test.yml)
 
 <!-- PROJECT LOGO
 <br />
