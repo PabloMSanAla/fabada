@@ -74,3 +74,11 @@ Thumbs.db
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+.pytest_cache/*
+*__pycache__/*
+*.pyc
+*.pyo
+*.pyd
+*.nbc
+*.nbi
